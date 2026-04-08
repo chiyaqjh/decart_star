@@ -120,6 +120,10 @@ python -m experiments.compare.user_storage_benchmark --max-N 512
 - experiments/results/
 - experiments/models/trained/*.pkl
 
+### 7.3 实验结果
+
+实验结果保存在experiments/results/
+
 
 ## 8. 让项目在新机器可跑的建议流程
 
