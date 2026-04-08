@@ -1,0 +1,51 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 10,
+    "record_dim": 784,
+    "model_type": "linear",
+    "model_dim": 784,
+    "policy_size": 3,
+    "num_runs": 2,
+    "save_results": true,
+    "results_dir": "experiments/results/our_decart"
+  },
+  "timing": {
+    "encrypt_times": [
+      0.2269892692565918,
+      0.22783255577087402
+    ],
+    "query_times": [
+      0.05412435531616211,
+      0.054900169372558594
+    ],
+    "decrypt_times": [
+      0.0010037422180175781,
+      0.000881195068359375
+    ]
+  },
+  "sizes": {
+    "communication": [
+      10490880,
+      10490880
+    ]
+  },
+  "runs": [],
+  "statistics": {
+    "avg_encrypt_times": 0.2274109125137329,
+    "std_encrypt_times": 0.0004216432571411133,
+    "min_encrypt_times": 0.2269892692565918,
+    "max_encrypt_times": 0.22783255577087402,
+    "avg_query_times": 0.05451226234436035,
+    "std_query_times": 0.0003879070281982422,
+    "min_query_times": 0.05412435531616211,
+    "max_query_times": 0.054900169372558594,
+    "avg_decrypt_times": 0.0009424686431884766,
+    "std_decrypt_times": 6.127357482910156e-05,
+    "min_decrypt_times": 0.000881195068359375,
+    "max_decrypt_times": 0.0010037422180175781,
+    "avg_communication_size": 10245.0,
+    "total_communication": 20490.0
+  }
+}
