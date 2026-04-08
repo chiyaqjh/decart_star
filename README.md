@@ -120,10 +120,6 @@ python -m experiments.compare.user_storage_benchmark --max-N 512
 - experiments/results/
 - experiments/models/trained/*.pkl
 
-这样做的好处:
-
-- 克隆后可直接查看已有实验结果
-- 同时保留重新运行能力
 
 ## 8. 让项目在新机器可跑的建议流程
 
@@ -132,34 +128,4 @@ python -m experiments.compare.user_storage_benchmark --max-N 512
 3. 安装依赖
 4. 先运行 tests/test_schemes_comparison.py 做快速健康检查
 5. 再运行 experiments.our_decart 或 experiments.our_decart_star 的 runner
-
-## 9. 常见问题
-
-### Q1: 缺少某些库怎么办?
-
-先执行:
-
-```bash
-pip install -r requirements.txt
-```
-
-如果仍报错，再按报错补装，例如:
-
-```bash
-pip install matplotlib torch torchvision
-```
-
-### Q2: 结果目录没有文件?
-
-确认没有使用 --no-save 参数，且脚本运行完成。
-
-### Q3: 运行较慢?
-
-先减小参数:
-
-- --num-records 16
-- --record-dim 16
-- --num-runs 1
-
-
 
