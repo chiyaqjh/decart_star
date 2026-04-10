@@ -62,7 +62,7 @@ class DeCartStarExperimentWrapper:
         返回:
             setup_time: 初始化耗时
         """
-        start = time.time()
+        start = time.perf_counter()
         
         self.curator = KeyCurator(scheme="decart_star", params=self.params)
         self.curator.setup()
@@ -73,7 +73,7 @@ class DeCartStarExperimentWrapper:
             scheme="decart_star"
         )
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
         
         print(f" DeCart* 实验环境初始化完成: {elapsed:.4f}秒")
@@ -86,12 +86,12 @@ class DeCartStarExperimentWrapper:
         返回:
             (sk, pk) 密钥对
         """
-        start = time.time()
+        start = time.perf_counter()
         
         sk, pk, pap = self.curator.generate_user_key(user_id)
         self.curator.register(user_id, pk, pap)
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['keygen_times'].append(elapsed)
         
         return sk, pk
@@ -132,9 +132,9 @@ class DeCartStarExperimentWrapper:
         owner = self.create_owner(owner_id)
         
         # 测量加密时间
-        start = time.time()
+        start = time.perf_counter()
         C_m, sk_h_s, ds_id = owner.encrypt_data(data, policy, metadata)
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
         
         # 测量密文大小
@@ -254,15 +254,15 @@ class DeCartStarExperimentWrapper:
             return None
         
         # 测量查询时间
-        start_query = time.time()
+        start_query = time.perf_counter()
         ER = self.curator.system.query(C_M, C_m, sk_h_s)
-        query_time = time.time() - start_query
+        query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
         
         # 测量解密时间
-        start_decrypt = time.time()
+        start_decrypt = time.perf_counter()
         results = self.curator.system.decrypt(C_M['sk_h_u'], ER)
-        decrypt_time = time.time() - start_decrypt
+        decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
         print(f"    查询时间: {query_time*1000:.2f} ms, 解密时间: {decrypt_time*1000:.2f} ms")

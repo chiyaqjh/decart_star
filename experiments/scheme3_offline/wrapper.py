@@ -78,9 +78,9 @@ class OfflineSchemeExperimentWrapper:
         返回:
             setup_time: 初始化耗时
         """
-        start = time.time()
+        start = time.perf_counter()
         # 线下方案只需要初始化同态加密
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
         print(f"   Offline 方案初始化完成: {elapsed:.4f}秒")
         return elapsed
@@ -92,7 +92,7 @@ class OfflineSchemeExperimentWrapper:
         返回:
             (sk, pk) - 用户密钥对
         """
-        start = time.time()
+        start = time.perf_counter()
         
         # 生成用户密钥对（模拟线下分发）
         # 实际中，每个用户应该有不同密钥，这里简化使用同一个HE实例的不同"虚拟"密钥
@@ -101,7 +101,7 @@ class OfflineSchemeExperimentWrapper:
         
         self.user_keys[user_id] = {'sk': sk, 'pk': pk}
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['keygen_times'].append(elapsed)
         
         return sk, pk
@@ -147,7 +147,7 @@ class OfflineSchemeExperimentWrapper:
         dataset_id = f"ds_{owner_id}_{timestamp}"
         
         # 测量加密时间
-        start = time.time()
+        start = time.perf_counter()
         
         # 加密每条数据记录（使用所有者密钥）
         encrypted_data = []
@@ -155,7 +155,7 @@ class OfflineSchemeExperimentWrapper:
             encrypted_record = self.he.encrypt(record)
             encrypted_data.append(encrypted_record)
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
         
         # 存储加密数据
@@ -264,13 +264,13 @@ class OfflineSchemeExperimentWrapper:
         encrypted_data = dataset_info['encrypted_data']
         
         # 加密模型（使用查询者密钥）
-        start_encrypt_model = time.time()
+        start_encrypt_model = time.perf_counter()
         encrypted_model = self.encrypt_model(model, querier_id)
-        model_encrypt_time = time.time() - start_encrypt_model
+        model_encrypt_time = time.perf_counter() - start_encrypt_model
         self.metrics['encrypt_times'].append(model_encrypt_time)
         
         # 执行同态查询
-        start_query = time.time()
+        start_query = time.perf_counter()
         
         results = []
         if isinstance(model, list):
@@ -287,11 +287,11 @@ class OfflineSchemeExperimentWrapper:
             for enc_record in encrypted_data:
                 results.append(self.he.encrypt([0.0]))
         
-        query_time = time.time() - start_query
+        query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
         
         # 解密结果（使用查询者密钥）
-        start_decrypt = time.time()
+        start_decrypt = time.perf_counter()
         decrypted_results = []
         for enc_result in results:
             try:
@@ -303,7 +303,7 @@ class OfflineSchemeExperimentWrapper:
             except:
                 decrypted_results.append(0.0)
         
-        decrypt_time = time.time() - start_decrypt
+        decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
         print(f"      Offline 方案查询: {query_time*1000:.2f} ms")

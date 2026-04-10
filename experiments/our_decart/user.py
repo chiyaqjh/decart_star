@@ -56,7 +56,7 @@ class DataQuerier(BaseDataQuerier):
             'total_time': 0
         }
         
-        start_total = time.time()
+        start_total = time.perf_counter()
         
         # 1. 获取数据集
         C_m, sk_h_s = database_server.get_dataset(owner_id, dataset_id)
@@ -64,9 +64,9 @@ class DataQuerier(BaseDataQuerier):
             return None, metrics
         
         # 2. 检查权限
-        start_check = time.time()
+        start_check = time.perf_counter()
         C_M = self.check_access(C_m)
-        metrics['check_time'] = time.time() - start_check
+        metrics['check_time'] = time.perf_counter() - start_check
         
         if C_M is None:
             return None, metrics
@@ -84,21 +84,21 @@ class DataQuerier(BaseDataQuerier):
             model = self.create_ai_model(model_type, dim)
         
         # 4. 加密模型
-        start_encrypt = time.time()
+        start_encrypt = time.perf_counter()
         C_M = self.encrypt_ai_model(model, C_M)
-        metrics['model_encrypt_time'] = time.time() - start_encrypt
+        metrics['model_encrypt_time'] = time.perf_counter() - start_encrypt
         
         # 5. 执行查询
-        start_query = time.time()
+        start_query = time.perf_counter()
         ER = self.key_curator.system.query(C_M, C_m, sk_h_s)
-        metrics['query_time'] = time.time() - start_query
+        metrics['query_time'] = time.perf_counter() - start_query
         
         # 6. 解密结果
-        start_decrypt = time.time()
+        start_decrypt = time.perf_counter()
         results = self.key_curator.system.decrypt(C_M['sk_h_u'], ER)
-        metrics['decrypt_time'] = time.time() - start_decrypt
+        metrics['decrypt_time'] = time.perf_counter() - start_decrypt
         
-        metrics['total_time'] = time.time() - start_total
+        metrics['total_time'] = time.perf_counter() - start_total
         metrics['num_results'] = len(results) if results else 0
         
         # 记录指标

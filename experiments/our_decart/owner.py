@@ -54,11 +54,11 @@ class DataOwner(BaseDataOwner):
         policy_size = len(access_policy) * 4  # int 4字节
         
         # 测量加密时间
-        start = time.time()
+        start = time.perf_counter()
         C_m, sk_h_s, ds_id = self.encrypt_data(
             data_records, access_policy, metadata, store_original=store_original
         )
-        encrypt_time = time.time() - start
+        encrypt_time = time.perf_counter() - start
         
         # 测量密文大小
         import sys
@@ -111,9 +111,9 @@ class DataOwner(BaseDataOwner):
             model_size = 0
         
         # 测量加密时间
-        start = time.time()
+        start = time.perf_counter()
         encrypted_model, enc_id = self.encrypt_model(model_id, access_policy)
-        encrypt_time = time.time() - start
+        encrypt_time = time.perf_counter() - start
         
         # 测量密文大小
         import sys

@@ -77,9 +77,9 @@ class ServerSchemeExperimentWrapper:
         返回:
             setup_time: 初始化耗时
         """
-        start = time.time()
+        start = time.perf_counter()
         # 服务器方案只需要初始化同态加密（已在 __init__ 中完成）
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
         print(f"   Server 方案初始化完成: {elapsed:.4f}秒")
         return elapsed
@@ -91,11 +91,11 @@ class ServerSchemeExperimentWrapper:
         返回:
             (user_id, None) - 用户没有密钥
         """
-        start = time.time()
+        start = time.perf_counter()
         
         self.registered_users.add(user_id)
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['keygen_times'].append(elapsed)
         
         # 用户没有密钥，所有加密用服务器公钥
@@ -118,7 +118,7 @@ class ServerSchemeExperimentWrapper:
         dataset_id = f"ds_{owner_id}_{timestamp}"
         
         # 测量加密时间
-        start = time.time()
+        start = time.perf_counter()
         
         # 加密每条数据记录
         encrypted_data = []
@@ -126,7 +126,7 @@ class ServerSchemeExperimentWrapper:
             encrypted_record = self.he.encrypt(record)
             encrypted_data.append(encrypted_record)
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
         
         # 存储加密数据
@@ -224,13 +224,13 @@ class ServerSchemeExperimentWrapper:
         encrypted_data = dataset_info['encrypted_data']
         
         # 加密模型
-        start_encrypt_model = time.time()
+        start_encrypt_model = time.perf_counter()
         encrypted_model = self.encrypt_model(model)
-        model_encrypt_time = time.time() - start_encrypt_model
+        model_encrypt_time = time.perf_counter() - start_encrypt_model
         self.metrics['encrypt_times'].append(model_encrypt_time)
         
         # 执行同态查询
-        start_query = time.time()
+        start_query = time.perf_counter()
         
         results = []
         if isinstance(model, list):
@@ -247,11 +247,11 @@ class ServerSchemeExperimentWrapper:
             for enc_record in encrypted_data:
                 results.append(self.he.encrypt([0.0]))
         
-        query_time = time.time() - start_query
+        query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
         
         # 解密结果（服务器拥有私钥）
-        start_decrypt = time.time()
+        start_decrypt = time.perf_counter()
         decrypted_results = []
         for enc_result in results:
             try:
@@ -263,7 +263,7 @@ class ServerSchemeExperimentWrapper:
             except:
                 decrypted_results.append(0.0)
         
-        decrypt_time = time.time() - start_decrypt
+        decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
         print(f"      Server 方案查询: {query_time*1000:.2f} ms")

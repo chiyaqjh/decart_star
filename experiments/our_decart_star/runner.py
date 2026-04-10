@@ -319,19 +319,19 @@ class ExperimentRunner:
                 
                 # 执行查询
                 print(f"   执行加密决策树查询...")
-                start_query = time.time()
+                start_query = time.perf_counter()
                 
                 # 调用系统 query 方法
                 ER = wrapper.curator.system.query(C_M, C_m, sk_h_s)
                 
-                query_time = time.time() - start_query
+                query_time = time.perf_counter() - start_query
                 print(f"   查询时间: {query_time*1000:.2f} ms")
                 
                 # 解密结果
                 if ER is not None:
-                    start_decrypt = time.time()
+                    start_decrypt = time.perf_counter()
                     results = wrapper.curator.system.decrypt(C_M['sk_h_u'], ER)
-                    decrypt_time = time.time() - start_decrypt
+                    decrypt_time = time.perf_counter() - start_decrypt
                     print(f"   解密时间: {decrypt_time*1000:.2f} ms")
                     print(f"   结果数量: {len(results) if results else 0}")
                     if results:

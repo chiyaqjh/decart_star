@@ -48,13 +48,13 @@ class DatabaseServer(BaseDatabaseServer):
             (ER, metrics)
         """
         # 记录开始时间
-        start = time.time()
+        start = time.perf_counter()
         
         # 执行查询
         ER = self.execute_query(querier_id, owner_id, dataset_id, C_M)
         
         # 计算查询时间
-        query_time = time.time() - start
+        query_time = time.perf_counter() - start
         
         metrics = {
             'query_time': query_time,

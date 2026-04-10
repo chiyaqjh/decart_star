@@ -1,0 +1,207 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 32,
+    "record_dim": 32,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 3,
+    "save_results": true,
+    "results_dir": "experiments/results/our_decart_star"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.3115248999092728,
+        0.294935500016436,
+        0.3017473998479545
+      ],
+      "query_times": [
+        0.05252550006844103,
+        0.05095730000175536,
+        0.0485918999183923
+      ],
+      "decrypt_times": [
+        0.0035643998999148607,
+        0.0034562000073492527,
+        0.0031164998654276133
+      ],
+      "communication_sizes": [
+        33554432,
+        33554432,
+        33554432
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.05252550006844103,
+          "decrypt_time": 0.0035643998999148607,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 1,
+          "query_time": 0.05095730000175536,
+          "decrypt_time": 0.0034562000073492527,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 2,
+          "query_time": 0.0485918999183923,
+          "decrypt_time": 0.0031164998654276133,
+          "success": true,
+          "num_results": 32
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.2846711000893265,
+        0.2915054999757558,
+        0.3810425999108702
+      ],
+      "query_times": [
+        0.00026190001517534256,
+        0.00021920003928244114,
+        0.0002088998444378376
+      ],
+      "decrypt_times": [
+        0.00992089998908341,
+        0.007924800040200353,
+        0.008266799850389361
+      ],
+      "communication_sizes": [
+        33554432,
+        33554432,
+        33554432
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00026190001517534256,
+          "decrypt_time": 0.00992089998908341,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 1,
+          "query_time": 0.00021920003928244114,
+          "decrypt_time": 0.007924800040200353,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 2,
+          "query_time": 0.0002088998444378376,
+          "decrypt_time": 0.008266799850389361,
+          "success": true,
+          "num_results": 32
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.29290049988776445,
+        0.3112820000387728,
+        0.2907336999196559
+      ],
+      "query_times": [
+        0.034313099924474955,
+        0.03412379999645054,
+        0.03249719995073974
+      ],
+      "decrypt_times": [
+        0.0078897001221776,
+        0.00796749978326261,
+        0.007602900033816695
+      ],
+      "communication_sizes": [
+        33554432,
+        33554432,
+        33554432
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.034313099924474955,
+          "decrypt_time": 0.0078897001221776,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 1,
+          "query_time": 0.03412379999645054,
+          "decrypt_time": 0.00796749978326261,
+          "success": true,
+          "num_results": 32
+        },
+        {
+          "run_id": 2,
+          "query_time": 0.03249719995073974,
+          "decrypt_time": 0.007602900033816695,
+          "success": true,
+          "num_results": 32
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.3027359332578878,
+      "std_encrypt_time": 0.006808570379946595,
+      "min_encrypt_time": 0.294935500016436,
+      "max_encrypt_time": 0.3115248999092728,
+      "avg_query_time": 0.0506915666628629,
+      "std_query_time": 0.0016168411982762467,
+      "min_query_time": 0.0485918999183923,
+      "max_query_time": 0.05252550006844103,
+      "avg_decrypt_time": 0.003379033257563909,
+      "std_decrypt_time": 0.0001908221522391024,
+      "min_decrypt_time": 0.0031164998654276133,
+      "max_decrypt_time": 0.0035643998999148607,
+      "avg_communication_size": 32768.0,
+      "std_communication_size": 0.0,
+      "total_communication": 98304.0
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.3190730666586508,
+      "std_encrypt_time": 0.043907816647117605,
+      "min_encrypt_time": 0.2846711000893265,
+      "max_encrypt_time": 0.3810425999108702,
+      "avg_query_time": 0.00022999996629854044,
+      "std_query_time": 2.2945345820245302e-05,
+      "min_query_time": 0.0002088998444378376,
+      "max_query_time": 0.00026190001517534256,
+      "avg_decrypt_time": 0.008704166626557708,
+      "std_decrypt_time": 0.0008716157502610328,
+      "min_decrypt_time": 0.007924800040200353,
+      "max_decrypt_time": 0.00992089998908341,
+      "avg_communication_size": 32768.0,
+      "std_communication_size": 0.0,
+      "total_communication": 98304.0
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.29830539994873106,
+      "std_encrypt_time": 0.009218382647301444,
+      "min_encrypt_time": 0.2907336999196559,
+      "max_encrypt_time": 0.3112820000387728,
+      "avg_query_time": 0.033644699957221746,
+      "std_query_time": 0.0008150770165428799,
+      "min_query_time": 0.03249719995073974,
+      "max_query_time": 0.034313099924474955,
+      "avg_decrypt_time": 0.007820033313085636,
+      "std_decrypt_time": 0.00015678720726045283,
+      "min_decrypt_time": 0.007602900033816695,
+      "max_decrypt_time": 0.00796749978326261,
+      "avg_communication_size": 32768.0,
+      "std_communication_size": 0.0,
+      "total_communication": 98304.0
+    }
+  }
+}

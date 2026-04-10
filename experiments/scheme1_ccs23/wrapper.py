@@ -72,9 +72,9 @@ class CCS23ExperimentWrapper:
         返回:
             setup_time: 初始化耗时
         """
-        start = time.time()
+        start = time.perf_counter()
         # CCS23 不需要复杂的密码学设置
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
         print(f"   CCS23 初始化完成: {elapsed:.4f}秒")
         return elapsed
@@ -86,11 +86,11 @@ class CCS23ExperimentWrapper:
         返回:
             (sk, pk) 这里返回虚拟值
         """
-        start = time.time()
+        start = time.perf_counter()
         
         self.registered_users.add(user_id)
         
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         self.metrics['keygen_times'].append(elapsed)
         
         # CCS23 中不需要真正的密钥，返回虚拟值
@@ -178,7 +178,7 @@ class CCS23ExperimentWrapper:
         # CCS23 中不检查权限（直接访问）
         
         # 执行明文查询
-        start_query = time.time()
+        start_query = time.perf_counter()
         
         results = []
         if isinstance(model, list):
@@ -217,7 +217,7 @@ class CCS23ExperimentWrapper:
             for record in data:
                 results.append(float(np.random.randn()))
         
-        query_time = time.time() - start_query
+        query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
         
         # CCS23 中解密时间为0
