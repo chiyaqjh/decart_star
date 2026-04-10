@@ -738,41 +738,36 @@ class DeCartSystem:
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
-                # 从根节点开始
+                # 从根节点开始，使用统一简单树逻辑进行遍历
                 current_node_id = encrypted_tree['root_id']
-                
-                # 查找内部节点映射
+
+                # 查找节点映射
                 internal_map = {n['node_id']: n for n in encrypted_tree['internal_nodes']}
                 leaf_map = {n['node_id']: n for n in encrypted_tree['leaf_nodes']}
-                
+
+                # 解密输入记录，用第 feature_idx 个特征做阈值判断
+                record_plain = self.he.decrypt(encrypted_record)
+                if not isinstance(record_plain, list):
+                    record_plain = [float(record_plain)]
+
                 # 遍历树
                 max_depth = 10  # 防止无限循环
                 depth = 0
                 
                 while current_node_id in internal_map and depth < max_depth:
                     node = internal_map[current_node_id]
-                    
-                    # 获取特征值（简化：使用第一个特征）
-                    # 注意：这里只是演示，实际需要从encrypted_record中提取对应特征
-                    feature_value = encrypted_record
-                    
-                    # 获取加密的阈值
-                    threshold_ciphertext = node['threshold']
-                    
-                    # 安全的同态比较：
-                    # 使用多项式近似 sign(x - threshold)
-                    # sign(x) ≈ x / sqrt(x^2 + ε) 的近似
-                    
-                    # 方法1：使用平方差（简单但有效）
-                    # (x - t)^2 可以区分大小，但丢失了方向信息
-                    
-                    # 方法2：使用线性近似（这里选择简单方法）
-                    # 为了简化，我们根据数据索引随机选择路径
-                    # 在真实实现中，需要使用同态比较协议
-                    
-                    # 临时解决方案：根据数据索引的奇偶性选择路径
-                    # 这样可以确保测试能运行
-                    if data_idx % 2 == 0:
+
+                    feature_idx = int(node.get('feature_idx', 0))
+                    threshold_ct = node['threshold']
+                    threshold_plain = self.he.decrypt(threshold_ct)
+                    if isinstance(threshold_plain, list):
+                        threshold = float(threshold_plain[0]) if threshold_plain else 0.0
+                    else:
+                        threshold = float(threshold_plain)
+
+                    feature_value = float(record_plain[feature_idx]) if feature_idx < len(record_plain) else 0.0
+
+                    if feature_value <= threshold:
                         current_node_id = node['left']
                     else:
                         current_node_id = node['right']

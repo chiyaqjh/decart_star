@@ -212,6 +212,37 @@ class CCS23ExperimentWrapper:
                         outputs.append(0.0)
                 
                 results.append(outputs[0] if outputs else 0.0)
+        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
+            # 简单决策树：统一基线逻辑
+            # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
+            nodes = model.get('nodes', [])
+            node_map = {n.get('id'): n for n in nodes}
+            root_id = model.get('root', 0)
+
+            for record in data:
+                current_id = root_id
+                depth = 0
+                max_depth = 10
+
+                while depth < max_depth and current_id in node_map:
+                    node = node_map[current_id]
+
+                    if 'value' in node:
+                        results.append(float(node['value']))
+                        break
+
+                    feature_idx = int(node.get('feature', 0))
+                    threshold = float(node.get('threshold', 0.0))
+                    feature_val = float(record[feature_idx]) if feature_idx < len(record) else 0.0
+
+                    if feature_val <= threshold:
+                        current_id = node.get('left')
+                    else:
+                        current_id = node.get('right')
+                    depth += 1
+                else:
+                    # 防御性回退
+                    results.append(0.0)
         else:
             # 默认处理
             for record in data:

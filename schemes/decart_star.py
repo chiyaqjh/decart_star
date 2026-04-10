@@ -778,13 +778,40 @@ class DeCartStarSystem:
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
-                # 简化版本：根据数据索引选择叶子节点
-                leaf_nodes = encrypted_tree.get('leaf_nodes', [])
-                
-                if leaf_nodes:
-                    leaf_idx = data_idx % len(leaf_nodes)
-                    leaf = leaf_nodes[leaf_idx]
-                    
+                # 统一简单树逻辑：feature[feature_idx] <= threshold 走左，否则走右
+                current_node_id = encrypted_tree.get('root_id', 0)
+                internal_map = {n['node_id']: n for n in encrypted_tree.get('internal_nodes', [])}
+                leaf_map = {n['node_id']: n for n in encrypted_tree.get('leaf_nodes', [])}
+
+                record_plain = self.he.decrypt(encrypted_record)
+                if not isinstance(record_plain, list):
+                    record_plain = [float(record_plain)]
+
+                max_depth = 10
+                depth = 0
+
+                while current_node_id in internal_map and depth < max_depth:
+                    node = internal_map[current_node_id]
+
+                    feature_idx = int(node.get('feature_idx', 0))
+                    threshold_ct = node['threshold']
+                    threshold_plain = self.he.decrypt(threshold_ct)
+                    if isinstance(threshold_plain, list):
+                        threshold = float(threshold_plain[0]) if threshold_plain else 0.0
+                    else:
+                        threshold = float(threshold_plain)
+
+                    feature_value = float(record_plain[feature_idx]) if feature_idx < len(record_plain) else 0.0
+
+                    if feature_value <= threshold:
+                        current_node_id = node['left']
+                    else:
+                        current_node_id = node['right']
+
+                    depth += 1
+
+                if current_node_id in leaf_map:
+                    leaf = leaf_map[current_node_id]
                     if 'value' in leaf:
                         results.append(leaf['value'])
                     else:

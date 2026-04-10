@@ -242,6 +242,44 @@ class ServerSchemeExperimentWrapper:
                     results.append(result)
                 except:
                     results.append(self.he.encrypt([0.0]))
+        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
+            # 简单决策树：统一基线逻辑
+            # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
+            nodes = model.get('nodes', [])
+            node_map = {n.get('id'): n for n in nodes}
+            root_id = model.get('root', 0)
+
+            for enc_record in encrypted_data:
+                try:
+                    plain_record = self.he.decrypt(enc_record)
+                    if not isinstance(plain_record, list):
+                        plain_record = [float(plain_record)]
+
+                    current_id = root_id
+                    depth = 0
+                    max_depth = 10
+                    pred = 0.0
+
+                    while depth < max_depth and current_id in node_map:
+                        node = node_map[current_id]
+
+                        if 'value' in node:
+                            pred = float(node['value'])
+                            break
+
+                        feature_idx = int(node.get('feature', 0))
+                        threshold = float(node.get('threshold', 0.0))
+                        feature_val = float(plain_record[feature_idx]) if feature_idx < len(plain_record) else 0.0
+
+                        if feature_val <= threshold:
+                            current_id = node.get('left')
+                        else:
+                            current_id = node.get('right')
+                        depth += 1
+
+                    results.append(self.he.encrypt([pred]))
+                except:
+                    results.append(self.he.encrypt([0.0]))
         else:
             # 简化处理
             for enc_record in encrypted_data:
