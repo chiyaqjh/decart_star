@@ -59,6 +59,12 @@ COLORS = {
 
 OUT_FIXED_N = PIC_DIR / 'scalability_fixed_n_time_comm.png'
 OUT_FIXED_CAP_N = PIC_DIR / 'scalability_fixedN_time_comm.png'
+OUT_FIXED_N_BAR = PIC_DIR / 'scalability_fixed_n_time_comm_bar.png'
+OUT_FIXED_CAP_N_BAR = PIC_DIR / 'scalability_fixedN_time_comm_bar.png'
+
+
+def _out_with_suffix(base_path, suffix):
+    return base_path.with_name(f'{base_path.stem}_{suffix}{base_path.suffix}')
 
 PLOT_STYLE = {
     'font.family': 'serif',
@@ -163,8 +169,16 @@ def _ensure_data(points, policy_size, num_runs, run_missing):
 
 
 def _aggregate_metrics(data):
+    metrics = _aggregate_metrics_detailed(data)
+    return metrics['lat'], metrics['comm']
+
+
+def _aggregate_metrics_detailed(data):
     # Average over all model types to get one line per scheme.
     model_dict = data.get('models', {})
+    enc_ms = []
+    qry_ms = []
+    dec_ms = []
     total_latency_ms = []
     comm_kb = []
 
@@ -174,28 +188,141 @@ def _aggregate_metrics(data):
         q = np.mean(np.array(m.get('query_times', [0.0]), dtype=float)) * 1000.0
         d = np.mean(np.array(m.get('decrypt_times', [0.0]), dtype=float)) * 1000.0
         c = np.mean(np.array(m.get('communication_sizes', [0.0]), dtype=float)) / 1024.0
+        enc_ms.append(e)
+        qry_ms.append(q)
+        dec_ms.append(d)
         total_latency_ms.append(e + q + d)
         comm_kb.append(c)
 
-    return float(np.mean(total_latency_ms)), float(np.mean(comm_kb))
+    return {
+        'enc': float(np.mean(enc_ms)) if enc_ms else 0.0,
+        'qry': float(np.mean(qry_ms)) if qry_ms else 0.0,
+        'dec': float(np.mean(dec_ms)) if dec_ms else 0.0,
+        'lat': float(np.mean(total_latency_ms)) if total_latency_ms else 0.0,
+        'comm': float(np.mean(comm_kb)) if comm_kb else 0.0,
+    }
 
 
 def _collect_curve(points, policy_size, num_runs):
-    curve = {s: {'x': [], 'lat': [], 'comm': []} for s in SCHEMES}
+    curve = {s: {'x': [], 'enc': [], 'qry': [], 'dec': [], 'lat': [], 'comm': []} for s in SCHEMES}
     used_sources = {}
     for num_records, record_dim in points:
         used_sources[(num_records, record_dim)] = {}
         for s in SCHEMES:
             data, src = _load_match(s, num_records, record_dim, policy_size, num_runs)
-            lat, comm = _aggregate_metrics(data)
+            metrics = _aggregate_metrics_detailed(data)
             curve[s]['x'].append((num_records, record_dim))
-            curve[s]['lat'].append(lat)
-            curve[s]['comm'].append(comm)
+            curve[s]['enc'].append(metrics['enc'])
+            curve[s]['qry'].append(metrics['qry'])
+            curve[s]['dec'].append(metrics['dec'])
+            curve[s]['lat'].append(metrics['lat'])
+            curve[s]['comm'].append(metrics['comm'])
             used_sources[(num_records, record_dim)][s] = src
     return curve, used_sources
 
 
-def _plot(curve, x_values, x_label, title, out_path, use_num_records):
+def _plot_pareto(curve, title, out_path):
+    fig, ax = plt.subplots(figsize=(8.2, 6.6))
+    markers = ['o', 's', '^', 'D', 'P', 'X', 'v', '*']
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (1, 1))]
+
+    for i, scheme in enumerate(SCHEMES):
+        comm = np.array(curve[scheme]['comm'], dtype=float)
+        lat = np.array(curve[scheme]['lat'], dtype=float)
+        order = np.argsort(comm)
+        ax.plot(
+            comm[order],
+            lat[order],
+            marker=markers[i % len(markers)],
+            linestyle=linestyles[i % len(linestyles)],
+            linewidth=1.8,
+            markersize=6,
+            markeredgewidth=0.8,
+            markeredgecolor='white',
+            color=COLORS.get(scheme, '#333333'),
+            label=scheme,
+        )
+
+    ax.set_xlabel('Communication (KB)')
+    ax.set_ylabel('Total Latency (ms)')
+    ax.set_title(title)
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc='best', frameon=False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=160, bbox_inches='tight')
+    plt.close()
+
+
+def _plot_stacked_latency(curve, title, out_path):
+    fig, ax = plt.subplots(figsize=(8.6, 6.6))
+    x = np.arange(len(SCHEMES), dtype=float)
+    enc = np.array([float(np.mean(curve[s]['enc'])) for s in SCHEMES], dtype=float)
+    qry = np.array([float(np.mean(curve[s]['qry'])) for s in SCHEMES], dtype=float)
+    dec = np.array([float(np.mean(curve[s]['dec'])) for s in SCHEMES], dtype=float)
+
+    ax.bar(x, enc, color='none', edgecolor='#3A5A98', hatch='/////', linewidth=1.3, label='Encrypt')
+    ax.bar(x, qry, bottom=enc, color='none', edgecolor='#5FA8A3', hatch='.....', linewidth=1.3, label='Query')
+    ax.bar(x, dec, bottom=enc + qry, color='none', edgecolor='#E07A5F', hatch='xxxxx', linewidth=1.3, label='Decrypt')
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(SCHEMES, rotation=15)
+    ax.set_ylabel('Latency (ms)')
+    ax.set_title(title)
+    ax.grid(axis='y', alpha=0.25)
+    ax.legend(frameon=False, ncol=3, loc='upper left')
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=160, bbox_inches='tight')
+    plt.close()
+
+
+def _plot_loglog(curve, x_values, x_label, title, out_path):
+    x = np.array(x_values, dtype=float)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 7.0))
+    markers = ['o', 's', '^', 'D', 'P', 'X', 'v', '*']
+    metrics = [('lat', 'Total Latency (ms)'), ('comm', 'Communication (KB)')]
+
+    for ax, (metric, ylabel) in zip(axes, metrics):
+        for i, scheme in enumerate(SCHEMES):
+            y = np.array(curve[scheme][metric], dtype=float)
+            mask = (x > 0) & (y > 0)
+            if np.count_nonzero(mask) < 2:
+                continue
+
+            xm = x[mask]
+            ym = y[mask]
+            ax.plot(
+                xm,
+                ym,
+                marker=markers[i % len(markers)],
+                linestyle='-',
+                linewidth=1.8,
+                markersize=6,
+                markeredgewidth=0.8,
+                markeredgecolor='white',
+                color=COLORS.get(scheme, '#333333'),
+                label=scheme,
+            )
+
+            coeff = np.polyfit(np.log10(xm), np.log10(ym), 1)
+            slope = coeff[0]
+            y_fit = (10 ** coeff[1]) * (xm ** slope)
+            ax.plot(xm, y_fit, linestyle=':', linewidth=1.0, color=COLORS.get(scheme, '#333333'), alpha=0.65)
+
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(ylabel)
+        ax.grid(True, which='both', alpha=0.2)
+
+    fig.suptitle(title, y=0.99)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.955), ncol=len(labels), frameon=False)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
+    plt.savefig(out_path, dpi=160, bbox_inches='tight')
+    plt.close()
+
+
+def _plot(curve, x_values, x_label, title, out_path, use_num_records, plot_kind='line'):
     fig, axes = plt.subplots(1, 2, figsize=(12, 7.8))
     x_indices = np.arange(len(x_values), dtype=float)
     x_labels = [str(v) for v in x_values]
@@ -205,35 +332,56 @@ def _plot(curve, x_values, x_label, title, out_path, use_num_records):
         'comm': 'Communication (KB)',
     }
 
-    # Slight x-offset per scheme to reveal fully-overlapped curves.
+    # Slight x-offset for line plots to reveal fully-overlapped curves.
     offset_step = 0.025
     center = (len(schemes) - 1) / 2.0
     x_offsets = {s: (i - center) * offset_step for i, s in enumerate(schemes)}
     markers = ['o', 's', '^', 'D', 'P', 'X', 'v', '*']
     linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (1, 1))]
+    bar_hatches = ['/////', '.....', '|||||', 'xxxxx', '+++++']
+    bar_width = 0.8 / max(1, len(schemes))
 
     for ax, metric in zip(axes, ['lat', 'comm']):  # Explicitly plot 'lat' and 'comm'
         for i, (scheme, data) in enumerate(curve.items()):
             values = data[metric]  # Extract the specific metric values
-            ax.plot(
-                x_indices + x_offsets[scheme],
-                values,
-                marker=markers[i % len(markers)],
-                linestyle=linestyles[i % len(linestyles)],
-                linewidth=1.8,
-                markersize=6,
-                markeredgewidth=0.8,
-                markeredgecolor='white',
-                alpha=0.95,
-                label=scheme,
-                zorder=3 + i,
-            )
+            if plot_kind == 'bar':
+                x_shift = (i - center) * bar_width
+                ax.bar(
+                    x_indices + x_shift,
+                    values,
+                    width=bar_width,
+                    color='none',
+                    edgecolor=COLORS.get(scheme, '#333333'),
+                    hatch=bar_hatches[i % len(bar_hatches)],
+                    linewidth=1.3,
+                    alpha=0.95,
+                    label=scheme,
+                    zorder=3 + i,
+                )
+            else:
+                ax.plot(
+                    x_indices + x_offsets[scheme],
+                    values,
+                    marker=markers[i % len(markers)],
+                    linestyle=linestyles[i % len(linestyles)],
+                    linewidth=1.8,
+                    markersize=6,
+                    markeredgewidth=0.8,
+                    markeredgecolor='white',
+                    alpha=0.95,
+                    label=scheme,
+                    zorder=3 + i,
+                )
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_labels[metric])
         ax.set_xticks(x_indices)
         ax.set_xticklabels(x_labels, rotation=45, ha='right')
         if len(x_indices) > 0:
-            ax.set_xlim(x_indices[0] - 0.35, x_indices[-1] + 0.35)
+            if plot_kind == 'bar':
+                ax.set_xlim(x_indices[0] - 0.5, x_indices[-1] + 0.5)
+            else:
+                ax.set_xlim(x_indices[0] - 0.35, x_indices[-1] + 0.35)
+        ax.grid(axis='y', alpha=0.25)
 
     fig.suptitle(title, y=0.99)
     handles, labels = axes[0].get_legend_handles_labels()
@@ -262,7 +410,15 @@ def main():
     parser.add_argument('--N-n-pairs', type=int, nargs='+', default=None, help='Custom (N, n) pairs: N1 n1 N2 n2 ...')
     parser.add_argument('--pairs-file', type=str, default=None, help='Text file with custom pairs, one pair per line: "N n" or "N,n"')
     parser.add_argument('--custom-only', action='store_true', help='Only generate custom (N, n) figure and skip fixed sweeps')
+    parser.add_argument('--plot-kind', choices=['line', 'bar', 'both'], default='line', help='Plot style to generate')
+    parser.add_argument('--extra-plots', nargs='*', default=[], help='Additional plots: 2|pareto 3|stacked 5|loglog')
     args = parser.parse_args()
+
+    extra_alias = {'2': 'pareto', '3': 'stacked', '5': 'loglog'}
+    extras = set()
+    for item in args.extra_plots:
+        key = str(item).strip().lower()
+        extras.add(extra_alias.get(key, key))
 
     fixed_n_points = [(N, args.fixed_n) for N in args.N_values]
     fixed_N_points = [(args.fixed_N, n) for n in args.n_values]
@@ -278,26 +434,90 @@ def main():
         curve_fixed_n, src_a = _collect_curve(fixed_n_points, args.policy_size, args.num_runs)
         curve_fixed_N, src_b = _collect_curve(fixed_N_points, args.policy_size, args.num_runs)
 
-        _plot(
-            curve_fixed_n,
-            x_values=args.N_values,
-            x_label='N (num_records)',
-            title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N',
-            out_path=OUT_FIXED_N,
-            use_num_records=True,
-        )
+        if args.plot_kind in ('line', 'both'):
+            _plot(
+                curve_fixed_n,
+                x_values=args.N_values,
+                x_label='N (num_records)',
+                title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N',
+                out_path=OUT_FIXED_N,
+                use_num_records=True,
+                plot_kind='line',
+            )
 
-        _plot(
-            curve_fixed_N,
-            x_values=args.n_values,
-            x_label='n (record_dim)',
-            title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n',
-            out_path=OUT_FIXED_CAP_N,
-            use_num_records=False,
-        )
+            _plot(
+                curve_fixed_N,
+                x_values=args.n_values,
+                x_label='n (record_dim)',
+                title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n',
+                out_path=OUT_FIXED_CAP_N,
+                use_num_records=False,
+                plot_kind='line',
+            )
+            print('Generated:', OUT_FIXED_N)
+            print('Generated:', OUT_FIXED_CAP_N)
 
-        print('Generated:', OUT_FIXED_N)
-        print('Generated:', OUT_FIXED_CAP_N)
+        if args.plot_kind in ('bar', 'both'):
+            _plot(
+                curve_fixed_n,
+                x_values=args.N_values,
+                x_label='N (num_records)',
+                title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N (Bar)',
+                out_path=OUT_FIXED_N_BAR,
+                use_num_records=True,
+                plot_kind='bar',
+            )
+
+            _plot(
+                curve_fixed_N,
+                x_values=args.n_values,
+                x_label='n (record_dim)',
+                title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n (Bar)',
+                out_path=OUT_FIXED_CAP_N_BAR,
+                use_num_records=False,
+                plot_kind='bar',
+            )
+            print('Generated:', OUT_FIXED_N_BAR)
+            print('Generated:', OUT_FIXED_CAP_N_BAR)
+
+        if 'pareto' in extras:
+            out = _out_with_suffix(OUT_FIXED_N, 'pareto')
+            _plot_pareto(curve_fixed_n, f'Pareto Frontier (Fixed n={args.fixed_n})', out)
+            print('Generated:', out)
+
+            out = _out_with_suffix(OUT_FIXED_CAP_N, 'pareto')
+            _plot_pareto(curve_fixed_N, f'Pareto Frontier (Fixed N={args.fixed_N})', out)
+            print('Generated:', out)
+
+        if 'stacked' in extras:
+            out = _out_with_suffix(OUT_FIXED_N, 'stacked_latency')
+            _plot_stacked_latency(curve_fixed_n, f'Latency Breakdown by Scheme (Fixed n={args.fixed_n})', out)
+            print('Generated:', out)
+
+            out = _out_with_suffix(OUT_FIXED_CAP_N, 'stacked_latency')
+            _plot_stacked_latency(curve_fixed_N, f'Latency Breakdown by Scheme (Fixed N={args.fixed_N})', out)
+            print('Generated:', out)
+
+        if 'loglog' in extras:
+            out = _out_with_suffix(OUT_FIXED_N, 'loglog')
+            _plot_loglog(
+                curve_fixed_n,
+                x_values=args.N_values,
+                x_label='N (num_records)',
+                title=f'Log-Log Scaling (Fixed n={args.fixed_n})',
+                out_path=out,
+            )
+            print('Generated:', out)
+
+            out = _out_with_suffix(OUT_FIXED_CAP_N, 'loglog')
+            _plot_loglog(
+                curve_fixed_N,
+                x_values=args.n_values,
+                x_label='n (record_dim)',
+                title=f'Log-Log Scaling (Fixed N={args.fixed_N})',
+                out_path=out,
+            )
+            print('Generated:', out)
 
         print('\nSources used (fixed n sweep):')
         for (nrec, rdim), row in src_a.items():
@@ -316,15 +536,39 @@ def main():
         print('Ensuring data for custom (N, n) pairs...')
         _ensure_data(custom_pairs, args.policy_size, args.num_runs, run_missing)
         curve_custom, _ = _collect_curve(custom_pairs, args.policy_size, args.num_runs)
-        _plot(
-            curve_custom,
-            x_values=[f'N={N}, n={n}' for N, n in custom_pairs],
-            x_label='Custom (N, n) Pairs',
-            title='Total Latency and Communication vs Custom (N, n) Pairs',
-            out_path=PIC_DIR / 'custom_N_n_pairs.png',
-            use_num_records=False,
-        )
-        print('Generated:', PIC_DIR / 'custom_N_n_pairs.png')
+        if args.plot_kind in ('line', 'both'):
+            _plot(
+                curve_custom,
+                x_values=[f'N={N}, n={n}' for N, n in custom_pairs],
+                x_label='Custom (N, n) Pairs',
+                title='Total Latency and Communication vs Custom (N, n) Pairs',
+                out_path=PIC_DIR / 'custom_N_n_pairs.png',
+                use_num_records=False,
+                plot_kind='line',
+            )
+            print('Generated:', PIC_DIR / 'custom_N_n_pairs.png')
+
+        if args.plot_kind in ('bar', 'both'):
+            _plot(
+                curve_custom,
+                x_values=[f'N={N}, n={n}' for N, n in custom_pairs],
+                x_label='Custom (N, n) Pairs',
+                title='Total Latency and Communication vs Custom (N, n) Pairs (Bar)',
+                out_path=PIC_DIR / 'custom_N_n_pairs_bar.png',
+                use_num_records=False,
+                plot_kind='bar',
+            )
+            print('Generated:', PIC_DIR / 'custom_N_n_pairs_bar.png')
+
+        if 'pareto' in extras:
+            out = PIC_DIR / 'custom_N_n_pairs_pareto.png'
+            _plot_pareto(curve_custom, 'Pareto Frontier (Custom (N, n) Pairs)', out)
+            print('Generated:', out)
+
+        if 'stacked' in extras:
+            out = PIC_DIR / 'custom_N_n_pairs_stacked_latency.png'
+            _plot_stacked_latency(curve_custom, 'Latency Breakdown by Scheme (Custom (N, n) Pairs)', out)
+            print('Generated:', out)
 
 
 if __name__ == '__main__':
