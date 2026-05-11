@@ -62,6 +62,58 @@ class CCS23ExperimentWrapper:
             'communication_sizes': [],
             'memory_sizes': []
         }
+
+    def _safe_obj_size(self, obj: Any, fallback: int = 1024) -> int:
+        """稳健估算对象字节数，优先使用真实序列化大小。"""
+        seen_ids = set()
+
+        def _measure(x: Any, depth: int = 0) -> int:
+            if x is None:
+                return 0
+
+            obj_id = id(x)
+            if obj_id in seen_ids:
+                return 0
+
+            if isinstance(x, (bytes, bytearray, memoryview)):
+                return len(x)
+
+            serializer = getattr(x, 'serialize', None)
+            if callable(serializer):
+                try:
+                    ser = serializer()
+                    if isinstance(ser, (bytes, bytearray, memoryview)):
+                        return len(ser)
+                except Exception:
+                    pass
+
+            try:
+                return len(pickle.dumps(x, protocol=pickle.HIGHEST_PROTOCOL))
+            except Exception:
+                pass
+
+            if depth < 20 and isinstance(x, dict):
+                seen_ids.add(obj_id)
+                total = 0
+                for k, v in x.items():
+                    total += _measure(k, depth + 1)
+                    total += _measure(v, depth + 1)
+                seen_ids.discard(obj_id)
+                return total
+
+            if depth < 20 and isinstance(x, (list, tuple, set)):
+                seen_ids.add(obj_id)
+                total = sum(_measure(item, depth + 1) for item in x)
+                seen_ids.discard(obj_id)
+                return total
+
+            try:
+                return len(str(x).encode('utf-8'))
+            except Exception:
+                return fallback
+
+        size = _measure(obj)
+        return size if size > 0 else fallback
         
         print(f" CCS23 实验环境初始化完成（中心化明文计算）")
     
@@ -123,8 +175,8 @@ class CCS23ExperimentWrapper:
             'store_time': time.time()
         }
         
-        # 测量"加密"时间（实际为0）
-        elapsed = 0.001  # 1ms 模拟
+        # 明文基线不做加密计算，耗时固定记为 0
+        elapsed = 0.0
         self.metrics['encrypt_times'].append(elapsed)
         
         # 测量数据大小（用于通信开销对比）
@@ -138,7 +190,7 @@ class CCS23ExperimentWrapper:
             'records': len(data)
         })
         
-        print(f"    CCS23 存储数据: {elapsed*1000:.2f} ms, 数据大小: {size/1024:.2f} KB")
+        print(f"    CCS23 存储数据: {elapsed*1000:.2f} ms (明文基线), 数据大小: {size/1024:.2f} KB")
         
         # 返回格式兼容的元数据
         C_m = {
@@ -174,6 +226,21 @@ class CCS23ExperimentWrapper:
         dataset_info = self.datasets[owner_id][dataset_id]
         data = dataset_info['data']
         policy = dataset_info['policy']
+
+        # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        req_payload = {
+            'querier_id': querier_id,
+            'owner_id': owner_id,
+            'dataset_id': dataset_id,
+            'encrypted_model': model,
+            'model_type': model.get('type', 'dot_product') if isinstance(model, dict) else 'dot_product'
+        }
+        req_size = self._safe_obj_size(req_payload)
+        self.metrics['communication_sizes'].append({
+            'type': 'query',
+            'size': req_size,
+            'records': len(data)
+        })
         
         # CCS23 中不检查权限（直接访问）
         
@@ -250,6 +317,14 @@ class CCS23ExperimentWrapper:
         
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
+
+        # 返回包阶段通信量：明文结果返回
+        res_size = self._safe_obj_size(results, fallback=max(1, len(results)) * 16)
+        self.metrics['communication_sizes'].append({
+            'type': 'decrypt',
+            'size': res_size,
+            'records': len(results)
+        })
         
         # CCS23 中解密时间为0
         decrypt_time = 0

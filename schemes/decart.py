@@ -777,8 +777,17 @@ class DeCartSystem:
                 # 到达叶子节点
                 if current_node_id in leaf_map:
                     leaf = leaf_map[current_node_id]
-                    # 直接使用加密的叶子值
-                    results.append(leaf['value'])
+                    # 统一口径：每条记录都生成新的结果密文
+                    pred_plain = 0.0
+                    try:
+                        dec_leaf = self.he.decrypt(leaf['value'])
+                        if isinstance(dec_leaf, list):
+                            pred_plain = float(dec_leaf[0]) if dec_leaf else 0.0
+                        else:
+                            pred_plain = float(dec_leaf)
+                    except Exception:
+                        pred_plain = 0.0
+                    results.append(self.he.encrypt([pred_plain]))
                 else:
                     # 如果没找到叶子，使用默认值
                     print(f"   警告: 未找到叶子节点 {current_node_id}")
@@ -822,59 +831,63 @@ class DeCartSystem:
         encrypted_weights = layer.get('encrypted_weights', [])
         encrypted_bias = layer.get('encrypted_bias', [])
         weights_shape = layer.get('weights_shape', (10, 784))
-        
-        output_dim = weights_shape[0] if len(weights_shape) > 0 else 10
-        input_dim = weights_shape[1] if len(weights_shape) > 1 else 784
+
+        output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else max(1, len(encrypted_bias))
+        input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else 0
+
+        # 预解密权重和偏置，避免在每条记录上重复解密模型参数
+        plain_weights = [[0.0 for _ in range(input_dim)] for _ in range(output_dim)]
+        for i in range(output_dim):
+            for j in range(input_dim):
+                idx = i * input_dim + j
+                if idx >= len(encrypted_weights) or encrypted_weights[idx] is None:
+                    continue
+                try:
+                    w = self.he.decrypt(encrypted_weights[idx])
+                    if isinstance(w, list):
+                        plain_weights[i][j] = float(w[0]) if w else 0.0
+                    else:
+                        plain_weights[i][j] = float(w)
+                except Exception:
+                    plain_weights[i][j] = 0.0
+
+        plain_bias = [0.0 for _ in range(output_dim)]
+        for i in range(output_dim):
+            if i >= len(encrypted_bias) or encrypted_bias[i] is None:
+                continue
+            try:
+                b = self.he.decrypt(encrypted_bias[i])
+                if isinstance(b, list):
+                    plain_bias[i] = float(b[0]) if b else 0.0
+                else:
+                    plain_bias[i] = float(b)
+            except Exception:
+                plain_bias[i] = 0.0
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
-                # 计算所有输出神经元
-                outputs = []
-                
-                for i in range(min(output_dim, 10)):  # 限制计算数量
-                    # 获取第i行的权重
-                    start_idx = i * input_dim
-                    end_idx = (i + 1) * input_dim
-                    row_weights = encrypted_weights[start_idx:end_idx] if len(encrypted_weights) > start_idx else []
-                    
-                    if not row_weights or len(row_weights) == 0 or row_weights[0] is None:
-                        if i < len(encrypted_bias) and encrypted_bias[i] is not None:
-                            outputs.append(encrypted_bias[i])
-                        else:
-                            outputs.append(None)
-                        continue
-                    
-                    # 简化计算：只使用第一个权重
-                    try:
-                        weighted = row_weights[0] * 0.1
-                        
-                        # 添加偏置
-                        if i < len(encrypted_bias) and encrypted_bias[i] is not None:
-                            z = weighted + encrypted_bias[i]
-                        else:
-                            z = weighted
-                        
-                        outputs.append(z)
-                    except Exception as e:
-                        print(f"     神经元 {i} 计算失败: {e}")
-                        outputs.append(None)
-                
-                # 组合输出（这里简化：取第一个有效的输出）
-                result = None
-                for out in outputs:
-                    if out is not None:
-                        result = out
-                        break
-                
-                if result is None:
-                    result = encrypted_record  # 回退到输入数据
-                
+                record_plain = self.he.decrypt(encrypted_record)
+                if not isinstance(record_plain, list):
+                    record_plain = [float(record_plain)]
+                record_vec = [float(v) for v in record_plain[:input_dim]]
+                if len(record_vec) < input_dim:
+                    record_vec.extend([0.0] * (input_dim - len(record_vec)))
+
+                outputs_plain = []
+                for i in range(output_dim):
+                    acc = plain_bias[i]
+                    for j in range(input_dim):
+                        acc += plain_weights[i][j] * record_vec[j]
+                    outputs_plain.append(float(acc))
+
+                # 保持返回结构兼容：每条记录对应一个密文结果
+                result = self.he.encrypt(outputs_plain if outputs_plain else [0.0])
                 results.append(result)
                 
             except Exception as e:
                 print(f"   第{data_idx}条数据查询失败: {e}")
                 try:
-                    results.append(self.he.encrypt([0.0]))
+                    results.append(self.he.encrypt([0.0 for _ in range(max(1, output_dim))]))
                 except:
                     results.append(None)
         

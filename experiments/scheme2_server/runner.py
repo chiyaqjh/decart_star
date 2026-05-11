@@ -69,6 +69,9 @@ class ExperimentRunner:
                 'query_times': [],
                 'decrypt_times': [],
                 'communication_sizes': [],
+                'comm_upload_sizes': [],
+                'comm_query_sizes': [],
+                'comm_decrypt_sizes': [],
                 'runs': []
             }
         
@@ -192,12 +195,27 @@ class ExperimentRunner:
             metrics = wrapper.get_metrics()
             
             # 收集该模型类型的指标
+            phase_comm = {'upload': 0, 'query': 0, 'decrypt': 0}
+            for c in wrapper.metrics['communication_sizes']:
+                if isinstance(c, dict):
+                    t = c.get('type')
+                    s = c.get('size', 0)
+                    if t == 'encrypt':
+                        phase_comm['upload'] += s
+                    elif t == 'query':
+                        phase_comm['query'] += s
+                    elif t == 'decrypt':
+                        phase_comm['decrypt'] += s
+
             model_metrics = {
                 'encrypt_times': wrapper.metrics['encrypt_times'].copy(),
                 'query_time': metrics['avg_query_time'] if 'avg_query_time' in metrics else 0,
                 'decrypt_time': metrics['avg_decrypt_time'] if 'avg_decrypt_time' in metrics else 0,
                 'communication_sizes': [s.copy() if isinstance(s, dict) else s 
                                        for s in wrapper.metrics['communication_sizes']],
+                'comm_upload_size': phase_comm['upload'],
+                'comm_query_size': phase_comm['query'],
+                'comm_decrypt_size': phase_comm['decrypt'],
                 'success': results is not None,
                 'num_results': len(results) if results else 0
             }
@@ -239,6 +257,9 @@ class ExperimentRunner:
                     model_results['encrypt_times'].extend(run_result['encrypt_times'])
                     model_results['query_times'].append(run_result['query_time'])
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
+                    model_results['comm_upload_sizes'].append(run_result.get('comm_upload_size', 0))
+                    model_results['comm_query_sizes'].append(run_result.get('comm_query_size', 0))
+                    model_results['comm_decrypt_sizes'].append(run_result.get('comm_decrypt_size', 0))
                     
                     for comm in run_result['communication_sizes']:
                         if isinstance(comm, dict):

@@ -13,6 +13,10 @@ import matplotlib.pyplot as plt
 from typing import Dict, List
 from pathlib import Path
 
+from accuracy_style import apply_accuracy_style, get_pic_accuracy_dir, single_output_path
+
+apply_accuracy_style()
+
 # 添加项目根目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
@@ -32,8 +36,7 @@ class TotalStorageBenchmark:
             'decart': {'N': [], 'total_storage': [], 'crs_size': [], 'avg_pap': []},
             'decart_star': {'N': [], 'total_storage': [], 'crs_size': [], 'avg_pap': []}
         }
-        self.results_dir = Path(project_root) / 'experiments' / 'results' / 'total_storage'
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.results_dir = get_pic_accuracy_dir(project_root)
     
     def estimate_crs_size(self, scheme: str, N: int, n: int = 16) -> float:
         """估算 CRS 大小（KB）- 避免 pickle 模块对象"""
@@ -134,15 +137,7 @@ class TotalStorageBenchmark:
         ax1.plot(N, self.results['decart']['crs_size'], 'b-o', label='DeCart', linewidth=2, markersize=8)
         ax1.plot(N, self.results['decart_star']['crs_size'], 'r-s', label='DeCart*', linewidth=2, markersize=8)
         
-        # 拟合曲线
-        if len(N) > 2:
-            coeffs_d = np.polyfit(N, self.results['decart']['crs_size'], 2)
-            coeffs_s = np.polyfit(N, self.results['decart_star']['crs_size'], 1)
-            N_smooth = np.linspace(min(N), max(N), 100)
-            ax1.plot(N_smooth, np.poly1d(coeffs_d)(N_smooth), 'b--', alpha=0.5, 
-                    label=f'{coeffs_d[0]:.2e}N²')
-            ax1.plot(N_smooth, np.poly1d(coeffs_s)(N_smooth), 'r--', alpha=0.5,
-                    label=f'{coeffs_s[0]:.2f}N')
+        # 不绘制拟合线，避免图例出现误导性的近零系数标签
         
         ax1.set_xlabel('Number of Users (N)')
         ax1.set_ylabel('CRS Size (KB)')
@@ -174,8 +169,7 @@ class TotalStorageBenchmark:
         
         plt.tight_layout()
         
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        img_path = self.results_dir / f'total_storage_{timestamp}.png'
+        img_path = single_output_path(self.results_dir, 'total_storage', 'png')
         plt.savefig(img_path, dpi=150, bbox_inches='tight')
         print(f"\n📊 图表已保存: {img_path}")
         plt.show()

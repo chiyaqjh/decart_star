@@ -54,6 +54,58 @@ class DeCartStarExperimentWrapper:
             'communication_sizes': [],
             'memory_sizes': []
         }
+
+    def _safe_obj_size(self, obj: Any, fallback: int = 1024) -> int:
+        """稳健估算对象字节数，优先使用真实序列化大小。"""
+        seen_ids = set()
+
+        def _measure(x: Any, depth: int = 0) -> int:
+            if x is None:
+                return 0
+
+            obj_id = id(x)
+            if obj_id in seen_ids:
+                return 0
+
+            if isinstance(x, (bytes, bytearray, memoryview)):
+                return len(x)
+
+            serializer = getattr(x, 'serialize', None)
+            if callable(serializer):
+                try:
+                    ser = serializer()
+                    if isinstance(ser, (bytes, bytearray, memoryview)):
+                        return len(ser)
+                except Exception:
+                    pass
+
+            try:
+                return len(pickle.dumps(x, protocol=pickle.HIGHEST_PROTOCOL))
+            except Exception:
+                pass
+
+            if depth < 20 and isinstance(x, dict):
+                seen_ids.add(obj_id)
+                total = 0
+                for k, v in x.items():
+                    total += _measure(k, depth + 1)
+                    total += _measure(v, depth + 1)
+                seen_ids.discard(obj_id)
+                return total
+
+            if depth < 20 and isinstance(x, (list, tuple, set)):
+                seen_ids.add(obj_id)
+                total = sum(_measure(item, depth + 1) for item in x)
+                seen_ids.discard(obj_id)
+                return total
+
+            try:
+                return len(str(x).encode('utf-8'))
+            except Exception:
+                return fallback
+
+        size = _measure(obj)
+        return size if size > 0 else fallback
     
     def setup(self) -> float:
         """
@@ -252,12 +304,35 @@ class DeCartStarExperimentWrapper:
         else:
             print(f"      不支持的模型类型: {type(model)}")
             return None
+
+        # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        req_payload = {
+            'querier_id': querier_id,
+            'owner_id': owner_id,
+            'dataset_id': dataset_id,
+            'encrypted_model': C_M.get('encrypted_model'),
+            'model_type': C_M.get('model_type')
+        }
+        req_size = self._safe_obj_size(req_payload)
+        self.metrics['communication_sizes'].append({
+            'type': 'query',
+            'size': req_size,
+            'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
+        })
         
         # 测量查询时间
         start_query = time.perf_counter()
         ER = self.curator.system.query(C_M, C_m, sk_h_s)
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
+
+        # 返回包阶段通信量：服务器返回的加密结果 ER
+        res_size = self._safe_obj_size(ER)
+        self.metrics['communication_sizes'].append({
+            'type': 'decrypt',
+            'size': res_size,
+            'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
+        })
         
         # 测量解密时间
         start_decrypt = time.perf_counter()
