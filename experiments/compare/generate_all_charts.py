@@ -505,58 +505,58 @@ def plot_storage_breakdown():
     raw = pickle.load(open(pkl_files[-1], 'rb'))
     N_values = raw['decart']['N_values']
     components = ['crs', 'pp', 'aux', 'user_secrets', 'trust_map', 'policies', 'encrypted_data']
-    comp_labels = ['CRS', 'pp', 'aux', 'User Secrets', 'Trust Map', 'Policies', 'Enc. Data']
-    comp_colors = ['#1565C0', '#0288D1', '#00897B', '#43A047', '#F9A825', '#FB8C00', '#E53935']
+    comp_labels = ['CRS', 'Public Params', 'Auxiliary', 'User Secrets', 'Trust Map', 'Policies', 'Encrypted Data']
+    comp_colors = ['#F27970', '#BB9727', '#54B345', '#32B897', '#05B9E2', '#3A5A98', '#E07A5F']
+    comp_hatches = ['-----', '/////', '|||||', '.....', 'xxxxx', '+++++', 'ooooo']
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
-    fig.suptitle('Storage Breakdown: DeCart vs DeCart* (KB)', fontsize=13, fontweight='bold')
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7.4), sharey=True)
+    fig.suptitle('Storage Breakdown: DeCart vs DeCart* (KB)', fontsize=13, fontweight='bold', y=0.98)
+
+    legend_handles = [
+        mpatches.Patch(facecolor='none', edgecolor=c, hatch=h, label=lbl, linewidth=1.2)
+        for lbl, c, h in zip(comp_labels, comp_colors, comp_hatches)
+    ]
 
     for ax, scheme, title in zip(axes, ['decart', 'decart_star'], ['DeCart (O(n²))', 'DeCart* (O(n))']):
         sizes = raw[scheme]['sizes']
         bottoms = np.zeros(len(N_values))
         totals = np.zeros(len(N_values))
 
-        for comp, label, color in zip(components, comp_labels, comp_colors):
+        for comp, label, color, hatch in zip(components, comp_labels, comp_colors, comp_hatches):
             vals = np.array([s[comp] for s in sizes])
-            ax.bar(range(len(N_values)), vals, bottom=bottoms, label=label, color=color, alpha=0.88)
-
-            # 仅在可读范围内标注分项值，避免文本重叠
-            for i, v in enumerate(vals):
-                if v >= 120:
-                    ax.text(
-                        i,
-                        bottoms[i] + v / 2.0,
-                        f'{v:.0f}',
-                        ha='center',
-                        va='center',
-                        fontsize=8,
-                        color='black'
-                    )
+            ax.bar(
+                range(len(N_values)),
+                vals,
+                bottom=bottoms,
+                label=label,
+                color='none',
+                edgecolor=color,
+                hatch=hatch,
+                linewidth=1.2,
+                alpha=0.95,
+            )
 
             bottoms += vals
             totals += vals
-
-        # 在柱顶标注总量
-        for i, total_v in enumerate(totals):
-            ax.text(
-                i,
-                total_v + max(80.0, total_v * 0.01),
-                f'{total_v:.0f}',
-                ha='center',
-                va='bottom',
-                fontsize=9,
-                fontweight='bold'
-            )
 
         ax.set_title(title, fontsize=12)
         ax.set_xticks(range(len(N_values)))
         ax.set_xticklabels([str(n) for n in N_values])
         ax.set_xlabel('N (Max Users)', fontsize=11)
         ax.set_ylabel('Storage (KB)', fontsize=11)
-        ax.legend(fontsize=8, loc='upper left')
         ax.grid(axis='y', alpha=0.3)
 
-    plt.tight_layout()
+    fig.legend(
+        handles=legend_handles,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 0.90),
+        ncol=4,
+        frameon=False,
+        fontsize=10,
+        columnspacing=0.8,
+    )
+
+    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.80])
     out = save_fig('storage_breakdown')
     plt.savefig(out, dpi=150, bbox_inches='tight')
     plt.close()

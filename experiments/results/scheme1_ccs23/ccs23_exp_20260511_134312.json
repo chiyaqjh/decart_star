@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 512,
+    "record_dim": 64,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00117200001841411
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        297045,
+        703,
+        4624
+      ],
+      "comm_upload_sizes": [
+        297045
+      ],
+      "comm_query_sizes": [
+        703
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00117200001841411,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00017030001617968082
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        297045,
+        266,
+        4624
+      ],
+      "comm_upload_sizes": [
+        297045
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00017030001617968082,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.013937100011389703
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        297045,
+        4783,
+        4624
+      ],
+      "comm_upload_sizes": [
+        297045
+      ],
+      "comm_query_sizes": [
+        4783
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.013937100011389703,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00117200001841411,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00117200001841411,
+      "max_query_time": 0.00117200001841411,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 98.42838541666667,
+      "std_communication_size": 135.52929872407927,
+      "total_communication": 295.28515625
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00017030001617968082,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00017030001617968082,
+      "max_query_time": 0.00017030001617968082,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 98.2861328125,
+      "std_communication_size": 135.63199973845693,
+      "total_communication": 294.8583984375
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.013937100011389703,
+      "std_query_time": 0.0,
+      "min_query_time": 0.013937100011389703,
+      "max_query_time": 0.013937100011389703,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 99.75651041666667,
+      "std_communication_size": 134.58117187701185,
+      "total_communication": 299.26953125
+    }
+  }
+}

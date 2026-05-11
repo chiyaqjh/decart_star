@@ -137,8 +137,8 @@ class PapSizeVsNBenchmark:
             label='DeCart*',
         )
         ax1.set_xlabel('n (users per block)')
-        ax1.set_ylabel('pap_id size (KB)')
-        ax1.set_title('pap_id Size vs n (Measured)')
+        ax1.set_ylabel('pap_id Storage Size (KB)')
+        ax1.set_title('Measured pap_id Storage Size vs n')
         ax1.grid(True, alpha=0.3)
         ax1.legend()
 
@@ -157,7 +157,7 @@ class PapSizeVsNBenchmark:
         for x, y in zip(n, ratio):
             ax2.text(x, y, f'{y:.4f}x', ha='center', va='bottom', fontsize=9)
         ax2.set_xlabel('n (users per block)')
-        ax2.set_ylabel('DeCart / DeCart*')
+        ax2.set_ylabel('Size Ratio (DeCart / DeCart*)')
         ax2.set_title('Size Ratio vs n')
         ax2.grid(True, alpha=0.3)
         ax2.yaxis.set_major_formatter(FormatStrFormatter('%.4f'))

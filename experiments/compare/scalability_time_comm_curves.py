@@ -73,6 +73,45 @@ PLOT_STYLE = {
 apply_accuracy_style()
 
 
+def _parse_pairs_file(pairs_file):
+    pairs = []
+    with open(pairs_file, 'r', encoding='utf-8') as f:
+        for line_no, raw in enumerate(f, start=1):
+            line = raw.strip()
+            if not line or line.startswith('#'):
+                continue
+            line = line.replace(',', ' ')
+            parts = line.split()
+            if len(parts) != 2:
+                raise ValueError(f'Invalid pair format at line {line_no}: {raw.rstrip()}')
+            n_records, r_dim = int(parts[0]), int(parts[1])
+            if n_records <= 0 or r_dim <= 0:
+                raise ValueError(f'Pair values must be positive at line {line_no}: {raw.rstrip()}')
+            pairs.append((n_records, r_dim))
+    return pairs
+
+
+def _parse_custom_pairs(flat_pairs, pairs_file):
+    pairs = []
+    if flat_pairs:
+        if len(flat_pairs) % 2 != 0:
+            raise ValueError('N-n-pairs must contain an even number of values (N1, n1, N2, n2, ...)')
+        pairs.extend((flat_pairs[i], flat_pairs[i + 1]) for i in range(0, len(flat_pairs), 2))
+    if pairs_file:
+        pairs.extend(_parse_pairs_file(pairs_file))
+
+    deduped = []
+    seen = set()
+    for n_records, r_dim in pairs:
+        key = (int(n_records), int(r_dim))
+        if key[0] <= 0 or key[1] <= 0:
+            raise ValueError(f'Pair values must be positive: {key}')
+        if key not in seen:
+            seen.add(key)
+            deduped.append(key)
+    return deduped
+
+
 def _load_match(scheme_name, num_records, record_dim, policy_size, num_runs):
     folder = SCHEME_INFO[scheme_name]['result_folder']
     files = sorted(glob.glob(str(RESULTS_ROOT / folder / '*.json')), reverse=True)
@@ -157,22 +196,56 @@ def _collect_curve(points, policy_size, num_runs):
 
 
 def _plot(curve, x_values, x_label, title, out_path, use_num_records):
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    x_indices = range(len(x_values))  # Use numeric indices for x-axis
+    fig, axes = plt.subplots(1, 2, figsize=(12, 7.8))
+    x_indices = np.arange(len(x_values), dtype=float)
+    x_labels = [str(v) for v in x_values]
+    schemes = list(curve.keys())
+    y_labels = {
+        'lat': 'Total Latency (ms)',
+        'comm': 'Communication (KB)',
+    }
+
+    # Slight x-offset per scheme to reveal fully-overlapped curves.
+    offset_step = 0.025
+    center = (len(schemes) - 1) / 2.0
+    x_offsets = {s: (i - center) * offset_step for i, s in enumerate(schemes)}
+    markers = ['o', 's', '^', 'D', 'P', 'X', 'v', '*']
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (1, 1))]
 
     for ax, metric in zip(axes, ['lat', 'comm']):  # Explicitly plot 'lat' and 'comm'
-        for scheme, data in curve.items():
+        for i, (scheme, data) in enumerate(curve.items()):
             values = data[metric]  # Extract the specific metric values
-            ax.plot(x_indices, values, marker='o', label=scheme)
+            ax.plot(
+                x_indices + x_offsets[scheme],
+                values,
+                marker=markers[i % len(markers)],
+                linestyle=linestyles[i % len(linestyles)],
+                linewidth=1.8,
+                markersize=6,
+                markeredgewidth=0.8,
+                markeredgecolor='white',
+                alpha=0.95,
+                label=scheme,
+                zorder=3 + i,
+            )
         ax.set_xlabel(x_label)
-        ax.set_ylabel(metric)
-        ax.legend()
+        ax.set_ylabel(y_labels[metric])
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(x_labels, rotation=45, ha='right')
+        if len(x_indices) > 0:
+            ax.set_xlim(x_indices[0] - 0.35, x_indices[-1] + 0.35)
 
-    axes[0].set_xticks(x_indices)
-    axes[0].set_xticklabels(x_values, rotation=45, ha='right')  # Set string labels
-
-    fig.suptitle(title)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.suptitle(title, y=0.99)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 0.955),
+        ncol=len(labels),
+        frameon=False,
+    )
+    plt.tight_layout(rect=[0, 0.03, 1, 0.90])
     plt.savefig(out_path, dpi=160, bbox_inches='tight')
     plt.close()
 
@@ -186,7 +259,9 @@ def main():
     parser.add_argument('--policy-size', type=int, default=8)
     parser.add_argument('--num-runs', type=int, default=2)
     parser.add_argument('--no-run-missing', action='store_true', help='Fail if required points are missing')
-    parser.add_argument('--N-n-pairs', type=int, nargs='+', default=None, help='Custom (N, n) pairs for analysis')
+    parser.add_argument('--N-n-pairs', type=int, nargs='+', default=None, help='Custom (N, n) pairs: N1 n1 N2 n2 ...')
+    parser.add_argument('--pairs-file', type=str, default=None, help='Text file with custom pairs, one pair per line: "N n" or "N,n"')
+    parser.add_argument('--custom-only', action='store_true', help='Only generate custom (N, n) figure and skip fixed sweeps')
     args = parser.parse_args()
 
     fixed_n_points = [(N, args.fixed_n) for N in args.N_values]
@@ -194,54 +269,53 @@ def main():
 
     run_missing = not args.no_run_missing
 
-    print('Ensuring data for fixed n sweep...')
-    _ensure_data(fixed_n_points, args.policy_size, args.num_runs, run_missing)
-    print('Ensuring data for fixed N sweep...')
-    _ensure_data(fixed_N_points, args.policy_size, args.num_runs, run_missing)
+    if not args.custom_only:
+        print('Ensuring data for fixed n sweep...')
+        _ensure_data(fixed_n_points, args.policy_size, args.num_runs, run_missing)
+        print('Ensuring data for fixed N sweep...')
+        _ensure_data(fixed_N_points, args.policy_size, args.num_runs, run_missing)
 
-    curve_fixed_n, src_a = _collect_curve(fixed_n_points, args.policy_size, args.num_runs)
-    curve_fixed_N, src_b = _collect_curve(fixed_N_points, args.policy_size, args.num_runs)
+        curve_fixed_n, src_a = _collect_curve(fixed_n_points, args.policy_size, args.num_runs)
+        curve_fixed_N, src_b = _collect_curve(fixed_N_points, args.policy_size, args.num_runs)
 
-    _plot(
-        curve_fixed_n,
-        x_values=args.N_values,
-        x_label='N (num_records)',
-        title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N',
-        out_path=OUT_FIXED_N,
-        use_num_records=True,
-    )
+        _plot(
+            curve_fixed_n,
+            x_values=args.N_values,
+            x_label='N (num_records)',
+            title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N',
+            out_path=OUT_FIXED_N,
+            use_num_records=True,
+        )
 
-    _plot(
-        curve_fixed_N,
-        x_values=args.n_values,
-        x_label='n (record_dim)',
-        title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n',
-        out_path=OUT_FIXED_CAP_N,
-        use_num_records=False,
-    )
+        _plot(
+            curve_fixed_N,
+            x_values=args.n_values,
+            x_label='n (record_dim)',
+            title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n',
+            out_path=OUT_FIXED_CAP_N,
+            use_num_records=False,
+        )
 
-    print('Generated:', OUT_FIXED_N)
-    print('Generated:', OUT_FIXED_CAP_N)
+        print('Generated:', OUT_FIXED_N)
+        print('Generated:', OUT_FIXED_CAP_N)
 
-    print('\nSources used (fixed n sweep):')
-    for (nrec, rdim), row in src_a.items():
-        print(f'  (N={nrec}, n={rdim})')
-        for s in SCHEMES:
-            print(f'    {s}: {row[s]}')
+        print('\nSources used (fixed n sweep):')
+        for (nrec, rdim), row in src_a.items():
+            print(f'  (N={nrec}, n={rdim})')
+            for s in SCHEMES:
+                print(f'    {s}: {row[s]}')
 
-    print('\nSources used (fixed N sweep):')
-    for (nrec, rdim), row in src_b.items():
-        print(f'  (N={nrec}, n={rdim})')
-        for s in SCHEMES:
-            print(f'    {s}: {row[s]}')
+        print('\nSources used (fixed N sweep):')
+        for (nrec, rdim), row in src_b.items():
+            print(f'  (N={nrec}, n={rdim})')
+            for s in SCHEMES:
+                print(f'    {s}: {row[s]}')
 
-    if args.N_n_pairs:
-        if len(args.N_n_pairs) % 2 != 0:
-            raise ValueError("N-n-pairs must contain an even number of values (N1, n1, N2, n2, ...}")
-        custom_pairs = [(args.N_n_pairs[i], args.N_n_pairs[i + 1]) for i in range(0, len(args.N_n_pairs), 2)]
+    custom_pairs = _parse_custom_pairs(args.N_n_pairs, args.pairs_file)
+    if custom_pairs:
         print('Ensuring data for custom (N, n) pairs...')
         _ensure_data(custom_pairs, args.policy_size, args.num_runs, run_missing)
-        curve_custom, src_custom = _collect_curve(custom_pairs, args.policy_size, args.num_runs)
+        curve_custom, _ = _collect_curve(custom_pairs, args.policy_size, args.num_runs)
         _plot(
             curve_custom,
             x_values=[f'N={N}, n={n}' for N, n in custom_pairs],

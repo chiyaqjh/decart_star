@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 72,
+    "record_dim": 14,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        6.880000000819564e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        9409,
+        253,
+        664
+      ],
+      "comm_upload_sizes": [
+        9409
+      ],
+      "comm_query_sizes": [
+        253
+      ],
+      "comm_decrypt_sizes": [
+        664
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 6.880000000819564e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 72
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        3.100000321865082e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        9409,
+        266,
+        664
+      ],
+      "comm_upload_sizes": [
+        9409
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        664
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 3.100000321865082e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 72
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0007648000027984381
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        9409,
+        1543,
+        664
+      ],
+      "comm_upload_sizes": [
+        9409
+      ],
+      "comm_query_sizes": [
+        1543
+      ],
+      "comm_decrypt_sizes": [
+        664
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0007648000027984381,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 72
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 6.880000000819564e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 6.880000000819564e-05,
+      "max_query_time": 6.880000000819564e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 3.361328125,
+      "std_communication_size": 4.123672965475838,
+      "total_communication": 10.083984375
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 3.100000321865082e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 3.100000321865082e-05,
+      "max_query_time": 3.100000321865082e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 3.3655598958333335,
+      "std_communication_size": 4.1204801772618955,
+      "total_communication": 10.0966796875
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0007648000027984381,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0007648000027984381,
+      "max_query_time": 0.0007648000027984381,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 3.78125,
+      "std_communication_size": 3.8395126681242404,
+      "total_communication": 11.34375
+    }
+  }
+}

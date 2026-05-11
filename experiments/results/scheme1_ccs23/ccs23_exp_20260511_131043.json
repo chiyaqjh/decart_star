@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 170,
+    "record_dim": 8,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0001846999512054026
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        12969,
+        199,
+        1546
+      ],
+      "comm_upload_sizes": [
+        12969
+      ],
+      "comm_query_sizes": [
+        199
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0001846999512054026,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        4.7200010158121586e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        12969,
+        266,
+        1546
+      ],
+      "comm_upload_sizes": [
+        12969
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 4.7200010158121586e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0012046999763697386
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        12969,
+        1003,
+        1546
+      ],
+      "comm_upload_sizes": [
+        12969
+      ],
+      "comm_query_sizes": [
+        1003
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0012046999763697386,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0001846999512054026,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0001846999512054026,
+      "max_query_time": 0.0001846999512054026,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 4.789713541666667,
+      "std_communication_size": 5.594530237056292,
+      "total_communication": 14.369140625
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 4.7200010158121586e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 4.7200010158121586e-05,
+      "max_query_time": 4.7200010158121586e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 4.8115234375,
+      "std_communication_size": 5.576671991674447,
+      "total_communication": 14.4345703125
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0012046999763697386,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0012046999763697386,
+      "max_query_time": 0.0012046999763697386,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 5.051432291666667,
+      "std_communication_size": 5.38798376174792,
+      "total_communication": 15.154296875
+    }
+  }
+}

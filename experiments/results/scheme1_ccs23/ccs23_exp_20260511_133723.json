@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 157,
+    "record_dim": 16,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00013840000610798597
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        23285,
+        271,
+        1429
+      ],
+      "comm_upload_sizes": [
+        23285
+      ],
+      "comm_query_sizes": [
+        271
+      ],
+      "comm_decrypt_sizes": [
+        1429
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00013840000610798597,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 157
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        4.75000124424696e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        23285,
+        266,
+        1429
+      ],
+      "comm_upload_sizes": [
+        23285
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        1429
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 4.75000124424696e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 157
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00167420000070706
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        23285,
+        1723,
+        1429
+      ],
+      "comm_upload_sizes": [
+        23285
+      ],
+      "comm_query_sizes": [
+        1723
+      ],
+      "comm_decrypt_sizes": [
+        1429
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00167420000070706,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 157
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00013840000610798597,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00013840000610798597,
+      "max_query_time": 0.00013840000610798597,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.133138020833334,
+      "std_communication_size": 10.338399691051283,
+      "total_communication": 24.3994140625
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 4.75000124424696e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 4.75000124424696e-05,
+      "max_query_time": 4.75000124424696e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.131510416666666,
+      "std_communication_size": 10.339638632127444,
+      "total_communication": 24.39453125
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00167420000070706,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00167420000070706,
+      "max_query_time": 0.00167420000070706,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.605794270833334,
+      "std_communication_size": 9.994555241430835,
+      "total_communication": 25.8173828125
+    }
+  }
+}

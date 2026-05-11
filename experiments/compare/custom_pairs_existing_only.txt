@@ -1,0 +1,4 @@
+# Existing points for quick no-run-missing verification
+64 16
+128 32
+256 64

@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 512,
+    "record_dim": 4,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00024289998691529036
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        20529,
+        163,
+        4624
+      ],
+      "comm_upload_sizes": [
+        20529
+      ],
+      "comm_query_sizes": [
+        163
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00024289998691529036,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0001438999897800386
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        20529,
+        266,
+        4624
+      ],
+      "comm_upload_sizes": [
+        20529
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0001438999897800386,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0039926000172272325
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        20529,
+        643,
+        4624
+      ],
+      "comm_upload_sizes": [
+        20529
+      ],
+      "comm_query_sizes": [
+        643
+      ],
+      "comm_decrypt_sizes": [
+        4624
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0039926000172272325,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 512
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00024289998691529036,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00024289998691529036,
+      "max_query_time": 0.00024289998691529036,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.240885416666666,
+      "std_communication_size": 8.53611898998765,
+      "total_communication": 24.72265625
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0001438999897800386,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0001438999897800386,
+      "max_query_time": 0.0001438999897800386,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.2744140625,
+      "std_communication_size": 8.504448156886236,
+      "total_communication": 24.8232421875
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0039926000172272325,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0039926000172272325,
+      "max_query_time": 0.0039926000172272325,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 8.397135416666666,
+      "std_communication_size": 8.389792756431065,
+      "total_communication": 25.19140625
+    }
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 170,
+    "record_dim": 32,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.00024990004021674395
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        49689,
+        415,
+        1546
+      ],
+      "comm_upload_sizes": [
+        49689
+      ],
+      "comm_query_sizes": [
+        415
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.00024990004021674395,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        5.3800002206116915e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        49689,
+        266,
+        1546
+      ],
+      "comm_upload_sizes": [
+        49689
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 5.3800002206116915e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0028051999979652464
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        49689,
+        3163,
+        1546
+      ],
+      "comm_upload_sizes": [
+        49689
+      ],
+      "comm_query_sizes": [
+        3163
+      ],
+      "comm_decrypt_sizes": [
+        1546
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0028051999979652464,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 170
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.00024990004021674395,
+      "std_query_time": 0.0,
+      "min_query_time": 0.00024990004021674395,
+      "max_query_time": 0.00024990004021674395,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 16.813151041666668,
+      "std_communication_size": 22.42778228790378,
+      "total_communication": 50.439453125
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 5.3800002206116915e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 5.3800002206116915e-05,
+      "max_query_time": 5.3800002206116915e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 16.7646484375,
+      "std_communication_size": 22.463342871089612,
+      "total_communication": 50.2939453125
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0028051999979652464,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0028051999979652464,
+      "max_query_time": 0.0028051999979652464,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 17.707682291666668,
+      "std_communication_size": 21.800253946728677,
+      "total_communication": 53.123046875
+    }
+  }
+}

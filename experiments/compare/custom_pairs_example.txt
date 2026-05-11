@@ -1,0 +1,9 @@
+# One pair per line: N n
+# You can also use comma: N,n
+64 16
+128 32
+256 64
+96 20
+150 48
+210 50
+300 70

@@ -1,0 +1,174 @@
+{
+  "config": {
+    "N": 64,
+    "n": 16,
+    "num_records": 45,
+    "record_dim": 32,
+    "model_types": [
+      "dot",
+      "decision_tree",
+      "neural_network"
+    ],
+    "policy_size": 8,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "experiments/results/scheme1_ccs23"
+  },
+  "models": {
+    "dot": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        7.489998824894428e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        13189,
+        415,
+        421
+      ],
+      "comm_upload_sizes": [
+        13189
+      ],
+      "comm_query_sizes": [
+        415
+      ],
+      "comm_decrypt_sizes": [
+        421
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 7.489998824894428e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 45
+        }
+      ]
+    },
+    "decision_tree": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        2.0799983758479357e-05
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        13189,
+        266,
+        421
+      ],
+      "comm_upload_sizes": [
+        13189
+      ],
+      "comm_query_sizes": [
+        266
+      ],
+      "comm_decrypt_sizes": [
+        421
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 2.0799983758479357e-05,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 45
+        }
+      ]
+    },
+    "neural_network": {
+      "encrypt_times": [
+        0.0
+      ],
+      "query_times": [
+        0.0007635000511072576
+      ],
+      "decrypt_times": [
+        0
+      ],
+      "communication_sizes": [
+        13189,
+        3163,
+        421
+      ],
+      "comm_upload_sizes": [
+        13189
+      ],
+      "comm_query_sizes": [
+        3163
+      ],
+      "comm_decrypt_sizes": [
+        421
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "query_time": 0.0007635000511072576,
+          "decrypt_time": 0,
+          "success": true,
+          "num_results": 45
+        }
+      ]
+    }
+  },
+  "summary": {
+    "dot": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 7.489998824894428e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 7.489998824894428e-05,
+      "max_query_time": 7.489998824894428e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 4.5654296875,
+      "std_communication_size": 5.879206673179387,
+      "total_communication": 13.6962890625
+    },
+    "decision_tree": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 2.0799983758479357e-05,
+      "std_query_time": 0.0,
+      "min_query_time": 2.0799983758479357e-05,
+      "max_query_time": 2.0799983758479357e-05,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 4.516927083333333,
+      "std_communication_size": 5.9138255752862205,
+      "total_communication": 13.55078125
+    },
+    "neural_network": {
+      "avg_encrypt_time": 0.0,
+      "std_encrypt_time": 0.0,
+      "min_encrypt_time": 0.0,
+      "max_encrypt_time": 0.0,
+      "avg_query_time": 0.0007635000511072576,
+      "std_query_time": 0.0,
+      "min_query_time": 0.0007635000511072576,
+      "max_query_time": 0.0007635000511072576,
+      "avg_decrypt_time": 0.0,
+      "std_decrypt_time": 0.0,
+      "min_decrypt_time": 0.0,
+      "max_decrypt_time": 0.0,
+      "avg_communication_size": 5.4599609375,
+      "std_communication_size": 5.359352934766895,
+      "total_communication": 16.3798828125
+    }
+  }
+}
