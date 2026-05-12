@@ -123,6 +123,61 @@ def get_mean(data, scheme, model, key):
     return float(np.mean(vals))
 
 # ─────────────────────────────────────────────────────────────
+# 分组柱状图（E/Q/D三柱并列，横轴为方案名）
+# ─────────────────────────────────────────────────────────────
+def plot_grouped_latency_bar():
+    data = load_all_schemes()
+    schemes = SCHEME_LABELS
+    phases = ['encrypt_times', 'query_times', 'decrypt_times']
+    phase_labels = ['Encrypt', 'Query', 'Decrypt']
+    # accuracy风格配色、hatch
+    phase_colors = ['#1565C0', '#26A69A', '#F2786D']  # 边框色（蓝/青/橙）
+    fill_colors = ['#90CAF9', '#A2DED0', '#F7B7A3']   # 填充色（浅蓝/浅青/浅橙）
+    fill_alpha = 1.0
+    hatches = ['////', '...', 'xx']
+    width = 0.22
+    x = np.arange(len(schemes))
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    # 直接用原始毫秒数
+    enc_vals = [get_mean(data, s, 'dot', 'encrypt_times') for s in schemes]
+    qry_vals = [get_mean(data, s, 'dot', 'query_times') for s in schemes]
+    dec_vals = [get_mean(data, s, 'dot', 'decrypt_times') for s in schemes]
+
+    # 分组柱状图（E/Q/D三部分并排，不堆叠）
+    bar_positions = [x - width, x, x + width]
+    bar_values = [enc_vals, qry_vals, dec_vals]
+    bar_labels = phase_labels
+    bar_colors = fill_colors
+    bar_edgecolors = phase_colors
+    bar_hatches = hatches
+    bars = []
+    for i in range(3):
+        b = ax.bar(bar_positions[i], bar_values[i], width,
+                  label=bar_labels[i],
+                  color=bar_colors[i], edgecolor=bar_edgecolors[i],
+                  alpha=fill_alpha, linewidth=1.5, hatch=bar_hatches[i], zorder=3)
+        bars.append(b)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(schemes, fontsize=14, rotation=15)
+    ax.set_ylabel('Latency (ms)', fontsize=14)
+    ax.set_xlabel('Schemes', fontsize=14)
+    ax.set_title('Latency Breakdown by Scheme (Total Users $N$)', fontsize=16)
+    # 设置主刻度和次刻度
+    from matplotlib.ticker import AutoMinorLocator
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.grid(which='major', axis='y', linestyle='--', linewidth=1, color='#888', alpha=0.6, zorder=0)
+    ax.grid(which='minor', axis='y', linestyle=':', linewidth=0.7, color='#bbb', alpha=0.4, zorder=0)
+    ax.legend(fontsize=13, loc='upper right', frameon=True, edgecolor='#ccc')
+
+    plt.tight_layout()
+    out = save_fig('grouped_latency_bar')
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ 分组柱状图已保存: {out.name}")
+
+# ─────────────────────────────────────────────────────────────
 # 图1: 通信开销 5方案对比（各阶段 vs N）
 # ─────────────────────────────────────────────────────────────
 def plot_communication_5schemes():
@@ -283,6 +338,7 @@ def plot_communication_5schemes():
 # 图2: 总耗时堆叠图（归一化到 CCS23=1，Encrypt+Query+Decrypt）
 # ─────────────────────────────────────────────────────────────
 def plot_stacked_total_time():
+
     data = load_all_schemes()
     schemes = SCHEME_LABELS
     colors_enc  = ['#1565C0', '#E65100', '#1B5E20', '#4A148C', '#B71C1C']
@@ -641,9 +697,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='生成论文图表')
     parser.add_argument(
         '--only',
-        choices=['all', 'comm', 'stacked', 'bar', 'throughput', 'storage', 'heatmap'],
+        choices=['all', 'comm', 'stacked', 'bar', 'throughput', 'storage', 'heatmap', 'grouped_latency'],
         default='all',
-        help='仅生成指定图表: all|comm|stacked|bar|throughput|storage|heatmap'
+        help='仅生成指定图表: all|comm|stacked|bar|throughput|storage|heatmap|grouped_latency'
     )
     args = parser.parse_args()
 
@@ -654,6 +710,7 @@ if __name__ == '__main__':
         ('throughput', '吞吐量对比图', plot_throughput),
         ('storage', '存储分项堆叠图', plot_storage_breakdown),
         ('heatmap', '加速比热力图', plot_speedup_heatmap),
+        ('grouped_latency', '分组柱状图', plot_grouped_latency_bar),
     ]
 
     selected_jobs = jobs if args.only == 'all' else [j for j in jobs if j[0] == args.only]

@@ -269,8 +269,8 @@ def _plot_stacked_latency(curve, title, out_path):
     ax.set_ylabel('Latency (ms)')
     ax.set_title(title)
     ax.grid(axis='y', alpha=0.25)
-    ax.legend(frameon=False, ncol=3, loc='upper left')
-    plt.tight_layout()
+    ax.legend(frameon=False, ncol=1, loc='center left', bbox_to_anchor=(1.02, 0.5))
+    plt.tight_layout(rect=[0.0, 0.0, 0.82, 1.0])
     plt.savefig(out_path, dpi=160, bbox_inches='tight')
     plt.close()
 
@@ -428,78 +428,34 @@ def main():
     if not args.custom_only:
         print('Ensuring data for fixed n sweep...')
         _ensure_data(fixed_n_points, args.policy_size, args.num_runs, run_missing)
-        print('Ensuring data for fixed N sweep...')
-        _ensure_data(fixed_N_points, args.policy_size, args.num_runs, run_missing)
-
         curve_fixed_n, src_a = _collect_curve(fixed_n_points, args.policy_size, args.num_runs)
-        curve_fixed_N, src_b = _collect_curve(fixed_N_points, args.policy_size, args.num_runs)
 
-        if args.plot_kind in ('line', 'both'):
-            _plot(
-                curve_fixed_n,
-                x_values=args.N_values,
-                x_label='N (num_records)',
-                title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N',
-                out_path=OUT_FIXED_N,
-                use_num_records=True,
-                plot_kind='line',
-            )
+        x_indices = np.arange(len(args.N_values), dtype=float)
+        x_labels = [str(v) for v in args.N_values]
+        bar_width = 0.2
+        offset = [-bar_width, 0, bar_width]
+        colors = ['#3A5A98', '#5FA8A3', '#E07A5F']
+        labels = ['Encrypt', 'Query', 'Decrypt']
 
-            _plot(
-                curve_fixed_N,
-                x_values=args.n_values,
-                x_label='n (record_dim)',
-                title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n',
-                out_path=OUT_FIXED_CAP_N,
-                use_num_records=False,
-                plot_kind='line',
-            )
-            print('Generated:', OUT_FIXED_N)
-            print('Generated:', OUT_FIXED_CAP_N)
-
-        if args.plot_kind in ('bar', 'both'):
-            _plot(
-                curve_fixed_n,
-                x_values=args.N_values,
-                x_label='N (num_records)',
-                title=f'Fixed n={args.fixed_n}: Total Latency and Communication vs N (Bar)',
-                out_path=OUT_FIXED_N_BAR,
-                use_num_records=True,
-                plot_kind='bar',
-            )
-
-            _plot(
-                curve_fixed_N,
-                x_values=args.n_values,
-                x_label='n (record_dim)',
-                title=f'Fixed N={args.fixed_N}: Total Latency and Communication vs n (Bar)',
-                out_path=OUT_FIXED_CAP_N_BAR,
-                use_num_records=False,
-                plot_kind='bar',
-            )
-            print('Generated:', OUT_FIXED_N_BAR)
-            print('Generated:', OUT_FIXED_CAP_N_BAR)
-
-        if 'pareto' in extras:
-            out = _out_with_suffix(OUT_FIXED_N, 'pareto')
-            _plot_pareto(curve_fixed_n, f'Pareto Frontier (Fixed n={args.fixed_n})', out)
-            print('Generated:', out)
-
-            out = _out_with_suffix(OUT_FIXED_CAP_N, 'pareto')
-            _plot_pareto(curve_fixed_N, f'Pareto Frontier (Fixed N={args.fixed_N})', out)
-            print('Generated:', out)
-
-        if 'stacked' in extras:
-            out = _out_with_suffix(OUT_FIXED_N, 'stacked_latency')
-            _plot_stacked_latency(curve_fixed_n, f'Latency Breakdown by Scheme (Fixed n={args.fixed_n})', out)
-            print('Generated:', out)
-
-            out = _out_with_suffix(OUT_FIXED_CAP_N, 'stacked_latency')
-            _plot_stacked_latency(curve_fixed_N, f'Latency Breakdown by Scheme (Fixed N={args.fixed_N})', out)
-            print('Generated:', out)
-
-        if 'loglog' in extras:
-            out = _out_with_suffix(OUT_FIXED_N, 'loglog')
+        for scheme in SCHEMES:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            enc = np.array(curve_fixed_n[scheme]['enc'])
+            qry = np.array(curve_fixed_n[scheme]['qry'])
+            dec = np.array(curve_fixed_n[scheme]['dec'])
+            ax.bar(x_indices + offset[0], enc, width=bar_width, color=colors[0], label='Encrypt', alpha=0.85)
+            ax.bar(x_indices + offset[1], qry, width=bar_width, color=colors[1], label='Query', alpha=0.85)
+            ax.bar(x_indices + offset[2], dec, width=bar_width, color=colors[2], label='Decrypt', alpha=0.85)
+            ax.set_xlabel('Total number of users $N$')
+            ax.set_ylabel('Latency (ms)')
+            ax.set_xticks(x_indices)
+            ax.set_xticklabels(x_labels, rotation=45, ha='right')
+            ax.grid(axis='y', alpha=0.25)
+            ax.legend(loc='upper left', frameon=False)
+            fig.suptitle(f'{scheme}: Encrypt/Query/Decrypt Latency vs Total Users $N$', y=0.99)
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.savefig(PIC_DIR / f'{scheme.lower()}_eqd_latency_vs_N.png', dpi=160, bbox_inches='tight')
+            plt.close()
+            print('Generated:', PIC_DIR / f'{scheme.lower()}_eqd_latency_vs_N.png')
             _plot_loglog(
                 curve_fixed_n,
                 x_values=args.N_values,
