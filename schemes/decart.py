@@ -34,14 +34,15 @@ from schemes.ai_model import (
 from bilinear_pairing import BilinearPairing
 from homomorphic import HomomorphicEncryption
 from finite_field import FiniteField
+from config import Config
 
 
 @dataclass
 class DeCartParams:
     """DeCart系统参数 - 严格按照论文"""
     lambda_security: int = 128      # 安全参数λ
-    N: int = 1024                   # 最大用户数N ∈ Z_p
-    n: int = 32                     # 每块用户数n ∈ Z_p
+    N: int = Config.MAX_USERS       # 最大用户数N ∈ Z_p
+    n: int = Config.BLOCK_SIZE      # 每块用户数n ∈ Z_p
     
     @property
     def B(self) -> int:
@@ -56,14 +57,14 @@ class DeCartSystem:
         """
         初始化DeCart系统
         """
-        self.params = params or DeCartParams(N=100, n=16)
+        self.params = params or DeCartParams(N=Config.MAX_USERS, n=Config.BLOCK_SIZE)
         
         # 初始化密码学原语
         print("初始化双线性配对...")
         self.bp = BilinearPairing(enable_cache=True)
         
         print("初始化同态加密...")
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=Config.POLY_MODULUS_DEGREE)
         
         print("初始化有限域...")
         self.ff = FiniteField(p=self.bp.get_group_order())
@@ -136,17 +137,22 @@ class DeCartSystem:
             h_i.append(h)
         
         # 3. 计算 H_{i,j} = g^{z_i·z_j}
-        print("3. 计算 H_{i,j} = e(g,g)^{z_i·z_j}...")
+        print("3. 计算 H_{i,j} = e(g,g)^{z_i·z_j}（对称半存储）...")
         H_ij = {}
         
         # 基础配对值 e(g,g) - 用 e(g1, g2) 表示
         e_gg = self.bp.pairing(self.bp.g1, self.bp.g2)
         
+        total_pairs = (self.params.n * (self.params.n - 1)) // 2
+        progress_step = max(1, self.params.n // 10)
+
         for i in range(self.params.n):
-            for j in range(self.params.n):
-                if i != j:
-                    exponent = (z_values[i] * z_values[j]) % p
-                    H_ij[(i, j)] = self.bp.exponentiate_gt(e_gg, exponent)
+            for j in range(i + 1, self.params.n):
+                exponent = (z_values[i] * z_values[j]) % p
+                H_ij[(i, j)] = self.bp.exponentiate_gt(e_gg, exponent)
+
+            if (i + 1) % progress_step == 0 or (i + 1) == self.params.n:
+                print(f"   H_ij 进度: {i + 1}/{self.params.n} 行, 已生成 {len(H_ij)}/{total_pairs} 个元素")
         
         # 4. 选择哈希函数 H: G_T → {0,1}*
         def H_gt_to_bytes(gt_elem: Any) -> bytes:
@@ -183,7 +189,7 @@ class DeCartSystem:
         
         print(f"\n Setup完成")
         print(f"   h_i: {len(h_i)} 个群G元素（G1表示）")
-        print(f"   H_ij: {len(H_ij)} 个G_T元素")
+        print(f"   H_ij: {len(H_ij)} 个G_T元素（对称半存储）")
         print(f"   基础配对值 e(g,g): 已计算")
         
         return self.crs, self.pp, self.aux

@@ -46,7 +46,7 @@ class OfflineSchemeExperimentWrapper:
         self.n = n
         
         # 初始化同态加密
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=32768)
         
         # 用户密钥对（线下预分发）
         self.user_keys = {}  # user_id -> {'pk': public_key, 'sk': secret_key}
@@ -120,6 +120,15 @@ class OfflineSchemeExperimentWrapper:
 
         size = _measure(obj)
         return size if size > 0 else fallback
+
+    def get_auxiliary_sizes(self) -> Dict[str, int]:
+        """Offline 基线不维护 CRS / pp / aux，统一返回 0。"""
+        return {
+            'crs_size_bytes': 0,
+            'pp_size_bytes': 0,
+            'aux_size_bytes': 0,
+            'total_auxiliary_size_bytes': 0
+        }
         
         print(f"  Offline 方案实验环境初始化完成（线下密钥分发，Check开销为0）")
     

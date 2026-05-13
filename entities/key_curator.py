@@ -21,6 +21,7 @@ from schemes.decart import DeCartSystem, DeCartParams
 from schemes.decart_star import DeCartStarSystem, DeCartStarParams
 from core.bilinear_pairing import BilinearPairing
 from core.finite_field import FiniteField
+from config import Config
 
 
 class KeyCurator:
@@ -54,13 +55,13 @@ class KeyCurator:
         # ===== 根据方案选择对应的系统内核 =====
         if self.scheme == "decart":
             from schemes.decart import DeCartSystem, DeCartParams
-            self.params = params or DeCartParams(N=1024, n=32)
+            self.params = params or DeCartParams(N=Config.MAX_USERS, n=Config.BLOCK_SIZE)
             self.system = DeCartSystem(self.params)
             self.scheme_name = "DeCart (O(n²))"
             
         elif self.scheme == "decart_star":
             from schemes.decart_star import DeCartStarSystem, DeCartStarParams
-            self.params = params or DeCartStarParams(N=1024, n=32)
+            self.params = params or DeCartStarParams(N=Config.MAX_USERS, n=Config.BLOCK_SIZE)
             self.system = DeCartStarSystem(self.params)
             self.scheme_name = "DeCart* (O(n)优化)"
             

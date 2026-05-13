@@ -21,6 +21,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config import Config
 from experiments.scheme2_server.wrapper import ServerSchemeExperimentWrapper
 
 
@@ -28,21 +29,21 @@ from experiments.scheme2_server.wrapper import ServerSchemeExperimentWrapper
 class ExperimentConfig:
     """实验配置"""
     # 系统参数
-    N: int = 64  # 最大用户数（接口兼容）
-    n: int = 16  # 每块用户数（接口兼容）
+    N: int = Config.MAX_USERS  # 最大用户数（接口兼容）
+    n: int = Config.BLOCK_SIZE  # 每块用户数（接口兼容）
     
     # 数据参数
-    num_records: int = 64  # 数据记录数
-    record_dim: int = 64   # 记录维度
+    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # 数据记录数
+    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 记录维度
     
     # 模型参数
     model_types: List[str] = None  # 要测试的模型类型
     
     # 策略参数
-    policy_size: int = 10  # 访问策略中的用户数
+    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # 访问策略中的用户数
     
     # 实验参数
-    num_runs: int = 5      # 重复运行次数
+    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 重复运行次数
     save_results: bool = True
     results_dir: str = "experiments/results/scheme2_server"
     
@@ -65,6 +66,7 @@ class ExperimentRunner:
         # 为每种模型类型创建结果容器
         for model_type in config.model_types:
             self.results['models'][model_type] = {
+                'setup_times': [],
                 'encrypt_times': [],
                 'query_times': [],
                 'decrypt_times': [],
@@ -72,6 +74,18 @@ class ExperimentRunner:
                 'comm_upload_sizes': [],
                 'comm_query_sizes': [],
                 'comm_decrypt_sizes': [],
+                'setup_crs_sizes': [],
+                'setup_pp_sizes': [],
+                'setup_aux_sizes': [],
+                'setup_total_auxiliary_sizes': [],
+                'register_crs_sizes': [],
+                'register_pp_sizes': [],
+                'register_aux_sizes': [],
+                'register_total_auxiliary_sizes': [],
+                'final_crs_sizes': [],
+                'final_pp_sizes': [],
+                'final_aux_sizes': [],
+                'final_total_auxiliary_sizes': [],
                 'runs': []
             }
         
@@ -161,7 +175,8 @@ class ExperimentRunner:
         try:
             # 初始化实验环境
             wrapper = ServerSchemeExperimentWrapper(N=self.config.N, n=self.config.n)
-            wrapper.setup()
+            setup_time = wrapper.setup()
+            setup_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             wrapper.reset_metrics()
             
             # 定义用户ID
@@ -176,6 +191,7 @@ class ExperimentRunner:
             
             # 注册所有用户
             self.register_all_users(wrapper, policy)
+            register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             
             # 生成测试数据
             data, _ = self.generate_test_data()
@@ -207,10 +223,16 @@ class ExperimentRunner:
                     elif t == 'decrypt':
                         phase_comm['decrypt'] += s
 
+            final_auxiliary_sizes = wrapper.get_auxiliary_sizes()
+
             model_metrics = {
+                'setup_time': setup_time,
                 'encrypt_times': wrapper.metrics['encrypt_times'].copy(),
                 'query_time': metrics['avg_query_time'] if 'avg_query_time' in metrics else 0,
                 'decrypt_time': metrics['avg_decrypt_time'] if 'avg_decrypt_time' in metrics else 0,
+                'setup_auxiliary_sizes': setup_auxiliary_sizes.copy(),
+                'register_auxiliary_sizes': register_auxiliary_sizes.copy(),
+                'final_auxiliary_sizes': final_auxiliary_sizes.copy(),
                 'communication_sizes': [s.copy() if isinstance(s, dict) else s 
                                        for s in wrapper.metrics['communication_sizes']],
                 'comm_upload_size': phase_comm['upload'],
@@ -254,12 +276,29 @@ class ExperimentRunner:
                 
                 if run_result:
                     # 累加结果
+                    model_results['setup_times'].append(run_result.get('setup_time', 0))
                     model_results['encrypt_times'].extend(run_result['encrypt_times'])
                     model_results['query_times'].append(run_result['query_time'])
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
                     model_results['comm_upload_sizes'].append(run_result.get('comm_upload_size', 0))
                     model_results['comm_query_sizes'].append(run_result.get('comm_query_size', 0))
                     model_results['comm_decrypt_sizes'].append(run_result.get('comm_decrypt_size', 0))
+
+                    setup_auxiliary_sizes = run_result.get('setup_auxiliary_sizes', {})
+                    register_auxiliary_sizes = run_result.get('register_auxiliary_sizes', {})
+                    final_auxiliary_sizes = run_result.get('final_auxiliary_sizes', {})
+                    model_results['setup_crs_sizes'].append(setup_auxiliary_sizes.get('crs_size_bytes', 0))
+                    model_results['setup_pp_sizes'].append(setup_auxiliary_sizes.get('pp_size_bytes', 0))
+                    model_results['setup_aux_sizes'].append(setup_auxiliary_sizes.get('aux_size_bytes', 0))
+                    model_results['setup_total_auxiliary_sizes'].append(setup_auxiliary_sizes.get('total_auxiliary_size_bytes', 0))
+                    model_results['register_crs_sizes'].append(register_auxiliary_sizes.get('crs_size_bytes', 0))
+                    model_results['register_pp_sizes'].append(register_auxiliary_sizes.get('pp_size_bytes', 0))
+                    model_results['register_aux_sizes'].append(register_auxiliary_sizes.get('aux_size_bytes', 0))
+                    model_results['register_total_auxiliary_sizes'].append(register_auxiliary_sizes.get('total_auxiliary_size_bytes', 0))
+                    model_results['final_crs_sizes'].append(final_auxiliary_sizes.get('crs_size_bytes', 0))
+                    model_results['final_pp_sizes'].append(final_auxiliary_sizes.get('pp_size_bytes', 0))
+                    model_results['final_aux_sizes'].append(final_auxiliary_sizes.get('aux_size_bytes', 0))
+                    model_results['final_total_auxiliary_sizes'].append(final_auxiliary_sizes.get('total_auxiliary_size_bytes', 0))
                     
                     for comm in run_result['communication_sizes']:
                         if isinstance(comm, dict):
@@ -271,6 +310,9 @@ class ExperimentRunner:
                         'run_id': i,
                         'query_time': run_result['query_time'],
                         'decrypt_time': run_result['decrypt_time'],
+                        'setup_auxiliary_sizes': setup_auxiliary_sizes,
+                        'register_auxiliary_sizes': register_auxiliary_sizes,
+                        'final_auxiliary_sizes': final_auxiliary_sizes,
                         'success': run_result['success'],
                         'num_results': run_result['num_results']
                     })
@@ -294,6 +336,14 @@ class ExperimentRunner:
         
         for model_type, model_data in self.results['models'].items():
             stats = {}
+
+            # 初始化时间
+            if model_data['setup_times']:
+                times = model_data['setup_times']
+                stats['avg_setup_time'] = float(np.mean(times))
+                stats['std_setup_time'] = float(np.std(times))
+                stats['min_setup_time'] = float(np.min(times))
+                stats['max_setup_time'] = float(np.max(times))
             
             # 加密时间
             if model_data['encrypt_times']:
@@ -325,6 +375,24 @@ class ExperimentRunner:
                 stats['avg_communication_size'] = float(np.mean(sizes)) / 1024  # KB
                 stats['std_communication_size'] = float(np.std(sizes)) / 1024
                 stats['total_communication'] = float(np.sum(sizes)) / 1024  # KB
+
+            auxiliary_size_fields = {
+                'setup_crs_sizes': 'avg_setup_crs_size_kb',
+                'setup_pp_sizes': 'avg_setup_pp_size_kb',
+                'setup_aux_sizes': 'avg_setup_aux_size_kb',
+                'setup_total_auxiliary_sizes': 'avg_setup_total_auxiliary_size_kb',
+                'register_crs_sizes': 'avg_register_crs_size_kb',
+                'register_pp_sizes': 'avg_register_pp_size_kb',
+                'register_aux_sizes': 'avg_register_aux_size_kb',
+                'register_total_auxiliary_sizes': 'avg_register_total_auxiliary_size_kb',
+                'final_crs_sizes': 'avg_final_crs_size_kb',
+                'final_pp_sizes': 'avg_final_pp_size_kb',
+                'final_aux_sizes': 'avg_final_aux_size_kb',
+                'final_total_auxiliary_sizes': 'avg_final_total_auxiliary_size_kb'
+            }
+            for field_name, summary_name in auxiliary_size_fields.items():
+                if model_data[field_name]:
+                    stats[summary_name] = float(np.mean(model_data[field_name])) / 1024
             
             summary[model_type] = stats
         
@@ -348,13 +416,6 @@ class ExperimentRunner:
     def save_results(self):
         """保存实验结果"""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"server_exp_{timestamp}.pkl"
-        filepath = os.path.join(self.config.results_dir, filename)
-        
-        with open(filepath, 'wb') as f:
-            pickle.dump(self.results, f)
-        
-        # 保存JSON版本
         json_filename = f"server_exp_{timestamp}.json"
         json_path = os.path.join(self.config.results_dir, json_filename)
         
@@ -377,7 +438,6 @@ class ExperimentRunner:
             json.dump(json_results, f, indent=2)
         
         print(f"\n Server 方案实验结果已保存:")
-        print(f"   Pickle: {filepath}")
         print(f"   JSON: {json_path}")
 
 
@@ -385,10 +445,12 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Server 方案实验")
-    parser.add_argument("--num-records", type=int, default=32, help="数据记录数")
-    parser.add_argument("--record-dim", type=int, default=32, help="记录维度")
-    parser.add_argument("--policy-size", type=int, default=8, help="策略大小")
-    parser.add_argument("--num-runs", type=int, default=3, help="重复运行次数")
+    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="最大用户数")
+    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="每块用户数")
+    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
+    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
+    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
+    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
     parser.add_argument("--model-types", nargs="+", 
                        default=['dot', 'decision_tree', 'neural_network'],
                        help="模型类型列表")
@@ -400,6 +462,8 @@ if __name__ == "__main__":
     print("  启动 Server 方案实验 (单一可信服务器)")
     print("="*80)
     print(f"\n 命令行参数:")
+    print(f"   N: {args.N}")
+    print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
     print(f"   record-dim: {args.record_dim}")
     print(f"   policy-size: {args.policy_size}")
@@ -408,8 +472,8 @@ if __name__ == "__main__":
     print(f"   save-results: {not args.no_save}")
     
     config = ExperimentConfig(
-        N=64,
-        n=16,
+        N=args.N,
+        n=args.n,
         num_records=args.num_records,
         record_dim=args.record_dim,
         policy_size=args.policy_size,

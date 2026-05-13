@@ -43,14 +43,15 @@ except ImportError:
 from bilinear_pairing import BilinearPairing  
 from homomorphic import HomomorphicEncryption  
 from finite_field import FiniteField  
+from config import Config
 
 
 @dataclass
 class DeCartStarParams:
     """DeCart* 系统参数 - 严格按论文"""
     lambda_security: int = 128
-    N: int = 1024
-    n: int = 32
+    N: int = Config.MAX_USERS
+    n: int = Config.BLOCK_SIZE
     
     @property
     def B(self) -> int:
@@ -62,7 +63,7 @@ class DeCartStarSystem:
     
     def __init__(self, params: Optional[DeCartStarParams] = None):
         """初始化 - 使用真实密码学库"""
-        self.params = params or DeCartStarParams(N=100, n=16)
+        self.params = params or DeCartStarParams(N=Config.MAX_USERS, n=Config.BLOCK_SIZE)
         
         # 真实双线性配对（bn256）
         print("初始化双线性配对...")
@@ -70,7 +71,7 @@ class DeCartStarSystem:
         
         # 真实同态加密（TenSEAL CKKS）
         print("初始化同态加密...")
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=Config.POLY_MODULUS_DEGREE)
         
         # 真实有限域（素数域）
         print("初始化有限域...")

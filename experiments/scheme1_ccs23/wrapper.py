@@ -44,7 +44,7 @@ class CCS23ExperimentWrapper:
         self.n = n
         
         # 初始化同态加密（仅用于测量，实际不用）
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=32768)
         
         # 数据存储（明文！）
         self.datasets = {}  # owner_id -> {dataset_id -> {'data': data, 'policy': policy}}
@@ -114,6 +114,15 @@ class CCS23ExperimentWrapper:
 
         size = _measure(obj)
         return size if size > 0 else fallback
+
+    def get_auxiliary_sizes(self) -> Dict[str, int]:
+        """CCS23 不维护 CRS / pp / aux，统一返回 0。"""
+        return {
+            'crs_size_bytes': 0,
+            'pp_size_bytes': 0,
+            'aux_size_bytes': 0,
+            'total_auxiliary_size_bytes': 0
+        }
         
         print(f" CCS23 实验环境初始化完成（中心化明文计算）")
     

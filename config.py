@@ -17,17 +17,25 @@ class Config:
     CURVE_TYPE: str = "bls12_381"  # 使用的椭圆曲线类型
     
     # ========== 系统容量参数 ==========
-    MAX_USERS: int = 1000      # N: 系统支持的最大用户数
-    BLOCK_SIZE: int = 10       # n: 每个块中的用户数
+    MAX_USERS: int = 10000     # N: 系统支持的最大用户数
+    BLOCK_SIZE: int = 32       # n: 每个块中的用户数
     NUM_BLOCKS: Optional[int] = None  # B: 总块数，将在初始化时计算
     
     # ========== 同态加密参数 ==========
     HOMOMORPHIC_SCHEME: str = "CKKS"  # 使用的同态加密方案
     
     # CKKS 特定参数
-    POLY_MODULUS_DEGREE: int = 8192     # 多项式模数阶
+    POLY_MODULUS_DEGREE: int = 32768    # 多项式模数阶
     COEFF_MOD_BIT_SIZES: list = [60, 40, 40, 60]  # 系数模数位大小
     SCALE: int = 2**40                   # 缩放因子
+
+    # ========== 实验默认参数 ==========
+    EXPERIMENT_NUM_RECORDS: int = 32
+    EXPERIMENT_RECORD_DIM: int = 32
+    EXPERIMENT_POLICY_SIZE: int = 32
+    EXPERIMENT_NUM_RUNS: int = 3
+    EXPERIMENT_FIXED_DATA_SIZE: int = 100
+    EXPERIMENT_REGISTER_N_VALUES: tuple = (100, 1000)
     
     # ========== 数据库配置 ==========
     DATABASE_SERVERS: int = 3           # 数据库服务器数量

@@ -7,7 +7,6 @@ import sys
 import os
 import argparse
 import json
-import pickle
 import glob
 import numpy as np
 import matplotlib
@@ -553,12 +552,14 @@ def plot_throughput():
 # 图5: 存储分项堆叠图（DeCart vs DeCart* 各组件 vs N）
 # ─────────────────────────────────────────────────────────────
 def plot_storage_breakdown():
-    pkl_files = sorted(glob.glob(os.path.join(project_root, 'experiments/results/storage_benchmark_dynamic/*.pkl')))
-    if not pkl_files:
+    json_files = sorted(glob.glob(os.path.join(project_root, 'experiments/results/storage_benchmark_dynamic/*.json')))
+    if json_files:
+        with open(json_files[-1], encoding='utf-8') as f:
+            raw = json.load(f)
+    else:
         print("  [跳过] 无存储基准测试数据")
         return
 
-    raw = pickle.load(open(pkl_files[-1], 'rb'))
     N_values = raw['decart']['N_values']
     components = ['crs', 'pp', 'aux', 'user_secrets', 'trust_map', 'policies', 'encrypted_data']
     comp_labels = ['CRS', 'Public Params', 'Auxiliary', 'User Secrets', 'Trust Map', 'Policies', 'Encrypted Data']

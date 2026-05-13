@@ -22,6 +22,7 @@ if parent_dir not in sys.path:
 
 from core.homomorphic import HomomorphicEncryption
 from entities.key_curator import KeyCurator
+from config import Config
 
 
 class DataQuerier:
@@ -81,7 +82,7 @@ class DataQuerier:
             raise ValueError("Key Curator尚未执行setup()")
         
         # 初始化同态加密（真实TenSEAL CKKS）
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=Config.POLY_MODULUS_DEGREE)
         
         # 用户密钥（从KeyCurator获取）
         self._load_user_keys()

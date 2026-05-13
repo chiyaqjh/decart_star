@@ -41,8 +41,8 @@ class TotalStorageBenchmark:
     def estimate_crs_size(self, scheme: str, N: int, n: int = 16) -> float:
         """估算 CRS 大小（KB）- 避免 pickle 模块对象"""
         if scheme == 'decart':
-            # DeCart: h_i (n个) + H_ij (n*n个)
-            n_elements = n + (n * n)
+            # DeCart: h_i (n个) + H_ij (n*(n-1)/2个，对称半存储)
+            n_elements = n + (n * (n - 1) // 2)
             # 每个元素估算 256 字节
             size_bytes = n_elements * 256
         else:

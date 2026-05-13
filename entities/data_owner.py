@@ -25,6 +25,7 @@ from schemes.decart import DeCartSystem, DeCartParams
 from schemes.decart_star import DeCartStarSystem, DeCartStarParams
 from schemes.ai_model import EncryptedModelWrapper, DecisionTreeHE, NeuralNetworkHE
 from entities.key_curator import KeyCurator
+from config import Config
 
 class DataOwner:
     """
@@ -82,7 +83,7 @@ class DataOwner:
             raise ValueError("Key Curator尚未执行setup()")
         
         # 初始化同态加密（真实TenSEAL CKKS）
-        self.he = HomomorphicEncryption(poly_modulus_degree=4096)
+        self.he = HomomorphicEncryption(poly_modulus_degree=Config.POLY_MODULUS_DEGREE)
         
         # 用户密钥（从KeyCurator获取）
         self._load_user_keys()

@@ -111,6 +111,34 @@ class DeCartExperimentWrapper:
 
         size = _measure(obj)
         return size if size > 0 else fallback
+
+    def get_auxiliary_sizes(self) -> Dict[str, int]:
+        """获取 CRS / pp / aux 等辅助参数规模快照（字节）。"""
+        zero_sizes = {
+            'crs_size_bytes': 0,
+            'pp_size_bytes': 0,
+            'aux_size_bytes': 0,
+            'total_auxiliary_size_bytes': 0
+        }
+
+        system = getattr(self.curator, 'system', None) if self.curator is not None else None
+        if system is None:
+            return zero_sizes
+
+        crs = getattr(system, 'crs', None)
+        pp = getattr(system, 'pp', None)
+        aux = getattr(system, 'aux', None)
+
+        crs_size = self._safe_obj_size(crs, fallback=0) if crs is not None else 0
+        pp_size = self._safe_obj_size(pp, fallback=0) if pp is not None else 0
+        aux_size = self._safe_obj_size(aux, fallback=0) if aux is not None else 0
+
+        return {
+            'crs_size_bytes': crs_size,
+            'pp_size_bytes': pp_size,
+            'aux_size_bytes': aux_size,
+            'total_auxiliary_size_bytes': crs_size + pp_size + aux_size
+        }
     
     def setup(self) -> float:
         """

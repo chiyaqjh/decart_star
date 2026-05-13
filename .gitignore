@@ -27,6 +27,9 @@ logs/
 
 # Data and experiment outputs (regenerable)
 data/MNIST/raw/
+experiments/results/**/*.json
+experiments/results/**/*.pkl
+experiments/results/json_archive/
 
 # Security-sensitive material
 keys/
