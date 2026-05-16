@@ -29,6 +29,8 @@ apply_accuracy_style()
 
 OUT_DIR = PROJECT_ROOT / 'experiments' / 'results' / 'pic_accuracy' / '通信_communication'
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+SIZE_OUT_DIR = PROJECT_ROOT / 'experiments' / 'results' / 'pic_accuracy' / '尺寸'
+SIZE_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SCHEMES = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
 SCHEME_COLORS = ['#2196F3', '#FF9800', '#4CAF50', '#9C27B0', '#F44336']
@@ -67,11 +69,12 @@ MODEL_KEY_MAP = {
 }
 
 DEFAULT_N = Config.MAX_USERS
-DEFAULT_BLOCK_SIZE = Config.BLOCK_SIZE
+DEFAULT_BLOCK_SIZE = 128
 DEFAULT_POLICY_SIZE = Config.EXPERIMENT_POLICY_SIZE
-DEFAULT_NUM_RUNS = Config.EXPERIMENT_NUM_RUNS
+DEFAULT_NUM_RUNS = 1
 FIXED_DATA_SIZE = Config.EXPERIMENT_FIXED_DATA_SIZE
-REGISTER_N_VALUES = list(Config.EXPERIMENT_REGISTER_N_VALUES)
+REGISTER_N_VALUES = [32, 128]
+TARGET_MODEL_KEY = 'decision_tree'
 
 RESULT_CACHE = {}
 
@@ -83,16 +86,24 @@ def style_axes(ax):
     ax.grid(which='minor', axis='y', linestyle=':', linewidth=0.7, color='#bbb', alpha=0.4, zorder=0)
 
 
-def save_figure(fig, filename):
-    output = OUT_DIR / filename
+def save_figure(fig, filename, out_dir=None):
+    output_dir = out_dir or OUT_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / filename
     fig.tight_layout()
     fig.savefig(output, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'Generated: {output}')
 
 
-def plot_multi_line(ax, x_values, y_map, x_label, y_label, title, x_scale='linear'):
-    for idx, scheme in enumerate(SCHEMES):
+def title_filename(title):
+    return f'{title}.png'
+
+
+def plot_multi_line(ax, x_values, y_map, x_label, y_label, title, x_scale='linear', schemes=None, legend_kwargs=None):
+    schemes = schemes or SCHEMES
+    for scheme in schemes:
+        idx = SCHEMES.index(scheme)
         ax.plot(
             x_values,
             y_map[scheme],
@@ -111,24 +122,29 @@ def plot_multi_line(ax, x_values, y_map, x_label, y_label, title, x_scale='linea
     ax.set_xticks(x_values)
     ax.set_xticklabels([str(v) for v in x_values], fontsize=12)
     style_axes(ax)
-    ax.legend(frameon=True, edgecolor='#ccc')
+    legend_options = {'frameon': True, 'edgecolor': '#ccc'}
+    if legend_kwargs:
+        legend_options.update(legend_kwargs)
+    ax.legend(**legend_options)
 
 
-def plot_grouped_bar(ax, categories, values_map, x_label, y_label, title):
+def plot_grouped_bar(ax, categories, values_map, x_label, y_label, title, schemes=None, legend_kwargs=None):
+    schemes = schemes or SCHEMES
     x = np.arange(len(categories), dtype=float)
-    bar_width = 0.15
-    center = (len(SCHEMES) - 1) / 2.0
+    bar_width = 0.15 if len(schemes) > 2 else 0.26
+    center = (len(schemes) - 1) / 2.0
 
-    for idx, scheme in enumerate(SCHEMES):
+    for idx, scheme in enumerate(schemes):
+        scheme_idx = SCHEMES.index(scheme)
         ax.bar(
             x + (idx - center) * bar_width,
             values_map[scheme],
             width=bar_width,
             label=scheme,
-            color=FILL_COLORS[idx],
-            edgecolor=SCHEME_COLORS[idx],
+            color=FILL_COLORS[scheme_idx],
+            edgecolor=SCHEME_COLORS[scheme_idx],
             linewidth=1.4,
-            hatch=HATCHES[idx],
+            hatch=HATCHES[scheme_idx],
             zorder=3,
         )
 
@@ -138,7 +154,38 @@ def plot_grouped_bar(ax, categories, values_map, x_label, y_label, title):
     ax.set_xticks(x)
     ax.set_xticklabels(categories, fontsize=12)
     style_axes(ax)
-    ax.legend(frameon=True, edgecolor='#ccc')
+    legend_options = {'frameon': True, 'edgecolor': '#ccc'}
+    if legend_kwargs:
+        legend_options.update(legend_kwargs)
+    ax.legend(**legend_options)
+
+
+def plot_grouped_bar_log(ax, categories, values_map, x_label, y_label, title, schemes=None, legend_kwargs=None):
+    positive_values = [
+        value
+        for scheme_values in values_map.values()
+        for value in scheme_values
+        if np.isfinite(value) and value > 0
+    ]
+    floor_value = min(positive_values) / 5.0 if positive_values else 1e-3
+    sanitized_map = {
+        scheme: [value if np.isfinite(value) and value > 0 else floor_value for value in scheme_values]
+        for scheme, scheme_values in values_map.items()
+    }
+    plot_grouped_bar(ax, categories, sanitized_map, x_label, y_label, title, schemes=schemes, legend_kwargs=legend_kwargs)
+    ax.set_yscale('log')
+    style_axes(ax)
+
+
+def _series_identical(y_map, schemes):
+    if len(schemes) < 2:
+        return False
+    first = np.array(y_map[schemes[0]], dtype=float)
+    for scheme in schemes[1:]:
+        other = np.array(y_map[scheme], dtype=float)
+        if not np.allclose(first, other, equal_nan=True):
+            return False
+    return True
 
 
 def _normalize_combo(combo):
@@ -148,7 +195,7 @@ def _normalize_combo(combo):
     return combo
 
 
-def _load_match(scheme_name, N, n, num_records, record_dim, policy_size, num_runs):
+def _load_match(scheme_name, N, n, num_records, record_dim, policy_size, num_runs, model_key=None, metric=None):
     folder = SCHEME_INFO[scheme_name]['result_folder']
     files = sorted(glob.glob(str(RESULTS_ROOT / folder / '*.json')), reverse=True)
     for file_path in files:
@@ -163,11 +210,15 @@ def _load_match(scheme_name, N, n, num_records, record_dim, policy_size, num_run
             and cfg.get('policy_size') == policy_size
             and cfg.get('num_runs') == num_runs
         ):
+            if model_key is not None:
+                value = metric_for_scheme(data, metric=metric, model_key=model_key)
+                if np.isnan(value):
+                    continue
             return data, Path(file_path).name
     return None, None
 
 
-def _run_one(scheme_name, N, n, num_records, record_dim, policy_size, num_runs):
+def _run_one(scheme_name, N, n, num_records, record_dim, policy_size, num_runs, model_key=None):
     runner = SCHEME_INFO[scheme_name]['runner']
     cmd = [
         sys.executable,
@@ -185,26 +236,49 @@ def _run_one(scheme_name, N, n, num_records, record_dim, policy_size, num_runs):
         '--num-runs',
         str(num_runs),
     ]
+    if model_key is not None:
+        cmd.extend(['--model-types', model_key])
     print('RUN:', ' '.join(cmd))
     subprocess.run(cmd, cwd=str(PROJECT_ROOT), check=True)
 
 
-def fetch_result_bundle(N, n, num_records, record_dim, policy_size, num_runs, run_missing=True):
-    key = (N, n, num_records, record_dim, policy_size, num_runs)
+def fetch_result_bundle(N, n, num_records, record_dim, policy_size, num_runs, run_missing=True, model_key=None, metric=None):
+    key = (N, n, num_records, record_dim, policy_size, num_runs, model_key, metric)
     if key in RESULT_CACHE:
         return RESULT_CACHE[key]
 
     data_map = {}
     src_map = {}
     for scheme in SCHEMES:
-        data, src = _load_match(scheme, N, n, num_records, record_dim, policy_size, num_runs)
+        data, src = _load_match(
+            scheme,
+            N,
+            n,
+            num_records,
+            record_dim,
+            policy_size,
+            num_runs,
+            model_key=model_key,
+            metric=metric,
+        )
         if data is None and run_missing:
-            _run_one(scheme, N, n, num_records, record_dim, policy_size, num_runs)
-            data, src = _load_match(scheme, N, n, num_records, record_dim, policy_size, num_runs)
+            _run_one(scheme, N, n, num_records, record_dim, policy_size, num_runs, model_key=model_key)
+            data, src = _load_match(
+                scheme,
+                N,
+                n,
+                num_records,
+                record_dim,
+                policy_size,
+                num_runs,
+                model_key=model_key,
+                metric=metric,
+            )
         if data is None:
-            raise FileNotFoundError(
-                f'Missing result for {scheme}: N={N}, n={n}, num_records={num_records}, record_dim={record_dim}, '
-                f'policy_size={policy_size}, num_runs={num_runs}'
+            print(
+                'SKIP:',
+                f'{scheme} missing for N={N}, n={n}, num_records={num_records}, record_dim={record_dim}, '
+                f'policy_size={policy_size}, num_runs={num_runs}, model_key={model_key}, metric={metric}'
             )
         data_map[scheme] = data
         src_map[scheme] = src
@@ -223,16 +297,24 @@ def _mean_kb(values):
     return float(np.mean(arr) / 1024.0)
 
 
+def _sum_kb(values):
+    arr = np.array(values or [0.0], dtype=float)
+    return float(np.sum(arr) / 1024.0)
+
+
 def _phase_comm_kb(model_block):
     if model_block.get('comm_upload_sizes') and model_block.get('comm_query_sizes') and model_block.get('comm_decrypt_sizes'):
+        upload_kb = _mean_kb(model_block.get('comm_upload_sizes'))
+        query_kb = _mean_kb(model_block.get('comm_query_sizes'))
+        decrypt_kb = _mean_kb(model_block.get('comm_decrypt_sizes'))
         return {
-            'upload_kb': _mean_kb(model_block.get('comm_upload_sizes')),
-            'query_kb': _mean_kb(model_block.get('comm_query_sizes')),
-            'decrypt_kb': _mean_kb(model_block.get('comm_decrypt_sizes')),
-            'total_kb': _mean_kb(model_block.get('communication_sizes')),
+            'upload_kb': upload_kb,
+            'query_kb': query_kb,
+            'decrypt_kb': decrypt_kb,
+            'total_kb': upload_kb + query_kb + decrypt_kb,
         }
 
-    total_kb = _mean_kb(model_block.get('communication_sizes'))
+    total_kb = _sum_kb(model_block.get('communication_sizes'))
     enc_t = max(_mean_ms(model_block.get('encrypt_times')) / 1000.0, 0.0)
     qry_t = max(_mean_ms(model_block.get('query_times')) / 1000.0, 0.0)
     dec_t = max(_mean_ms(model_block.get('decrypt_times')) / 1000.0, 0.0)
@@ -253,14 +335,74 @@ def _phase_comm_kb(model_block):
     }
 
 
+def _register_comm_kb(model_block):
+    total_sizes = model_block.get('register_total_auxiliary_sizes')
+    if total_sizes:
+        return _mean_kb(total_sizes)
+
+    component_groups = [
+        model_block.get('register_crs_sizes'),
+        model_block.get('register_pp_sizes'),
+        model_block.get('register_aux_sizes'),
+    ]
+    if any(component_groups):
+        values = [_mean_kb(values) for values in component_groups if values]
+        return float(sum(values)) if values else float('nan')
+
+    return float('nan')
+
+
+def _structure_size_kb(model_block, metric):
+    metric_map = {
+        'setup_crs_kb': 'setup_crs_sizes',
+        'setup_pp_kb': 'setup_pp_sizes',
+        'setup_aux_kb': 'setup_aux_sizes',
+        'setup_total_aux_kb': 'setup_total_auxiliary_sizes',
+        'register_crs_kb': 'register_crs_sizes',
+        'register_pp_kb': 'register_pp_sizes',
+        'register_aux_kb': 'register_aux_sizes',
+        'register_total_aux_kb': 'register_total_auxiliary_sizes',
+        'final_crs_kb': 'final_crs_sizes',
+        'final_pp_kb': 'final_pp_sizes',
+        'final_aux_kb': 'final_aux_sizes',
+        'final_total_aux_kb': 'final_total_auxiliary_sizes',
+    }
+    field_name = metric_map.get(metric)
+    if field_name is None:
+        return float('nan')
+    values = model_block.get(field_name)
+    return _mean_kb(values) if values else float('nan')
+
+
 def metric_for_scheme(data, metric, model_key=None):
+    if data is None:
+        return float('nan')
+
     models = data.get('models', {})
-    blocks = [models[model_key]] if model_key else list(models.values())
+    if model_key is not None:
+        block = models.get(model_key)
+        if not block:
+            return float('nan')
+        if metric == 'register_kb':
+            return _register_comm_kb(block)
+        if metric.endswith('_kb') and metric not in {'upload_kb', 'query_kb', 'decrypt_kb', 'total_kb'}:
+            return _structure_size_kb(block, metric)
+        phase = _phase_comm_kb(block)
+        return phase[metric]
+
+    blocks = list(models.values())
     values = []
     for block in blocks:
-        phase = _phase_comm_kb(block)
-        values.append(phase[metric])
-    return float(np.mean(values)) if values else 0.0
+        if metric == 'register_kb':
+            value = _register_comm_kb(block)
+        elif metric.endswith('_kb') and metric not in {'upload_kb', 'query_kb', 'decrypt_kb', 'total_kb'}:
+            value = _structure_size_kb(block, metric)
+        else:
+            phase = _phase_comm_kb(block)
+            value = phase[metric]
+        if not np.isnan(value):
+            values.append(value)
+    return float(np.mean(values)) if values else float('nan')
 
 
 def curve_from_real_data(x_values, combo_fn, metric, model_key=None, run_missing=True):
@@ -275,10 +417,22 @@ def curve_from_real_data(x_values, combo_fn, metric, model_key=None, run_missing
             policy_size=policy_size,
             num_runs=num_runs,
             run_missing=run_missing,
+            model_key=model_key,
+            metric=metric,
         )
         for scheme in SCHEMES:
             curve[scheme].append(metric_for_scheme(data_map[scheme], metric=metric, model_key=model_key))
     return curve
+
+
+def curve_decision_tree_only(x_values, combo_fn, metric, run_missing=True):
+    return curve_from_real_data(
+        x_values,
+        combo_fn=combo_fn,
+        metric=metric,
+        model_key=TARGET_MODEL_KEY,
+        run_missing=run_missing,
+    )
 
 
 def latest_config_for_scheme(scheme):
@@ -310,47 +464,35 @@ def chart_0_parameter_overview():
     save_figure(fig, '00_parameter_overview.png')
 
 
-def chart_1_register_vs_users(run_missing):
-    users = [10, 100, 500, 1000, 5000, 10000]
-    first_n, second_n = REGISTER_N_VALUES
-    n100 = curve_from_real_data(
-        users,
-        combo_fn=lambda user_count: (user_count, first_n, FIXED_DATA_SIZE, FIXED_DATA_SIZE, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
-        metric='upload_kb',
-        run_missing=run_missing,
-    )
-    n1000 = curve_from_real_data(
-        users,
-        combo_fn=lambda user_count: (user_count, second_n, FIXED_DATA_SIZE, FIXED_DATA_SIZE, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
-        metric='upload_kb',
+def chart_1_register_vs_n(run_missing):
+    n_values = [16, 32, 64, 128, 256, 512]
+    decart_schemes = ['DeCart', 'DeCart*']
+    chart_title = f'Register Communication vs Block Size (N = {DEFAULT_N})'
+    curve = curve_decision_tree_only(
+        n_values,
+        combo_fn=lambda n_value: (DEFAULT_N, n_value, FIXED_DATA_SIZE, FIXED_DATA_SIZE, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='register_kb',
         run_missing=run_missing,
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.7), sharey=True)
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
     plot_multi_line(
-        axes[0],
-        users,
-        n100,
-        x_label='Number of users',
+        ax,
+        n_values,
+        curve,
+        x_label='Block size n',
         y_label='Communication cost (KB)',
-        title=f'Register Communication (n = {first_n})',
+        title='',
         x_scale='log',
+        schemes=decart_schemes,
     )
-    plot_multi_line(
-        axes[1],
-        users,
-        n1000,
-        x_label='Number of users',
-        y_label='Communication cost (KB)',
-        title=f'Register Communication (n = {second_n})',
-        x_scale='log',
-    )
-    save_figure(fig, f'01_register_vs_users_n{first_n}_n{second_n}.png')
+    save_figure(fig, title_filename(chart_title))
 
 
 def chart_2_encrypt_vs_records(run_missing):
-    records = [10, 100, 500, 1000, 5000, 10000]
-    curve = curve_from_real_data(
+    records = [10, 100, 1000, 10000]
+    chart_title = f'Encrypt Communication vs Number of Data Records (policy size = {DEFAULT_POLICY_SIZE})'
+    curve = curve_decision_tree_only(
         records,
         combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
         metric='upload_kb',
@@ -364,53 +506,87 @@ def chart_2_encrypt_vs_records(run_missing):
         curve,
         x_label='Number of data records',
         y_label='Communication cost (KB)',
-        title='Encrypt Communication vs Data Records (policy size = 32)',
+        title='',
         x_scale='log',
     )
-    save_figure(fig, '02_encrypt_vs_records_policy32.png')
+    save_figure(fig, title_filename(chart_title))
 
 
-def chart_3_check_vs_model_size(run_missing):
-    models = ['MLP100', 'MLP10000', 'NN100000', 'ResNet']
-    labels_to_dim = {
-        'MLP100': 100,
-        'MLP10000': 1000,
-        'NN100000': 10000,
-        'ResNet': 10000,
-    }
-
-    values_map = {scheme: [] for scheme in SCHEMES}
-    for label in models:
-        data_map, _ = fetch_result_bundle(
-            N=DEFAULT_N,
-            n=DEFAULT_BLOCK_SIZE,
-            num_records=FIXED_DATA_SIZE,
-            record_dim=labels_to_dim[label],
-            policy_size=DEFAULT_POLICY_SIZE,
-            num_runs=DEFAULT_NUM_RUNS,
-            run_missing=run_missing,
-        )
-        for scheme in SCHEMES:
-            model_key = MODEL_KEY_MAP[label]
-            values_map[scheme].append(metric_for_scheme(data_map[scheme], metric='query_kb', model_key=model_key))
-
-    fig, ax = plt.subplots(figsize=(9.4, 5.8))
-    plot_grouped_bar(
-        ax,
-        models,
-        values_map,
-        x_label='Model size',
-        y_label='Communication cost (KB)',
-        title='Check Communication vs Model Size (5 Schemes)',
+def chart_2_encrypt_vs_records_bar(run_missing):
+    records = [10, 100, 1000, 10000]
+    categories = [str(value) for value in records]
+    chart_title = f'Encrypt Communication vs Number of Data Records (policy size = {DEFAULT_POLICY_SIZE}) bar'
+    curve = curve_decision_tree_only(
+        records,
+        combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='upload_kb',
+        run_missing=run_missing,
     )
-    save_figure(fig, '03_check_vs_model_size.png')
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_grouped_bar_log(
+        ax,
+        categories,
+        curve,
+        x_label='Number of data records',
+        y_label='Communication cost (KB)',
+        title='',
+    )
+    save_figure(fig, title_filename(chart_title))
 
 
-def chart_4_query_vs_result_size(run_missing):
-    result_sizes = [10, 100, 500, 1000, 5000, 10000]
-    values_map = curve_from_real_data(
-        result_sizes,
-        combo_fn=lambda result_size: (result_size, result_size, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+def chart_3_check_vs_records(run_missing):
+    records = [10, 100, 500, 1000, 5000, 10000]
+    chart_title = 'Decision Tree Total Communication vs Number of Data Records (5 Schemes)'
+    curve = curve_decision_tree_only(
+        records,
+        combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='total_kb',
+        run_missing=run_missing,
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_multi_line(
+        ax,
+        records,
+        curve,
+        x_label='Number of data records',
+        y_label='Communication cost (KB)',
+        title='',
+        x_scale='log',
+    )
+    save_figure(fig, title_filename(chart_title))
+
+
+def chart_3_check_vs_records_bar(run_missing):
+    records = [10, 100, 500, 1000, 5000, 10000]
+    categories = [str(value) for value in records]
+    chart_title = 'Decision Tree Total Communication vs Number of Data Records (5 Schemes) bar'
+    curve = curve_decision_tree_only(
+        records,
+        combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='total_kb',
+        run_missing=run_missing,
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_grouped_bar_log(
+        ax,
+        categories,
+        curve,
+        x_label='Number of data records',
+        y_label='Communication cost (KB)',
+        title='',
+    )
+    save_figure(fig, title_filename(chart_title))
+
+
+def chart_4_query_vs_records(run_missing):
+    records = [10, 100, 500, 1000, 5000, 10000]
+    chart_title = 'Decision Tree Query Communication vs Number of Data Records (5 Schemes)'
+    curve = curve_decision_tree_only(
+        records,
+        combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
         metric='query_kb',
         run_missing=run_missing,
     )
@@ -418,14 +594,160 @@ def chart_4_query_vs_result_size(run_missing):
     fig, ax = plt.subplots(figsize=(9.0, 5.7))
     plot_multi_line(
         ax,
-        result_sizes,
-        values_map,
-        x_label='Size of query results',
+        records,
+        curve,
+        x_label='Number of data records',
         y_label='Communication cost (KB)',
-        title='Query Communication vs Query Result Size (5 Schemes)',
+        title='',
+        x_scale='log',
+        legend_kwargs={'loc': 'upper left', 'bbox_to_anchor': (1.01, 1.0), 'borderaxespad': 0.0},
+    )
+    save_figure(fig, title_filename(chart_title))
+
+
+def chart_4_query_vs_records_bar(run_missing):
+    records = [10, 100, 500, 1000, 5000, 10000]
+    categories = [str(value) for value in records]
+    chart_title = 'Decision Tree Query Communication vs Number of Data Records (5 Schemes) bar'
+    curve = curve_decision_tree_only(
+        records,
+        combo_fn=lambda record_count: (record_count, record_count, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='query_kb',
+        run_missing=run_missing,
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_grouped_bar_log(
+        ax,
+        categories,
+        curve,
+        x_label='Number of data records',
+        y_label='Communication cost (KB)',
+        title='',
+        legend_kwargs={'loc': 'upper left', 'bbox_to_anchor': (1.01, 1.0), 'borderaxespad': 0.0},
+    )
+    save_figure(fig, title_filename(chart_title))
+
+
+def chart_5_decrypt_vs_result_size(run_missing):
+    result_sizes = [10, 100, 500, 1000, 5000, 10000]
+    chart_title = 'Decision Tree Decrypt Communication vs Data Scale (5 Schemes)'
+    curve = curve_decision_tree_only(
+        result_sizes,
+        combo_fn=lambda result_size: (result_size, result_size, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='decrypt_kb',
+        run_missing=run_missing,
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_multi_line(
+        ax,
+        result_sizes,
+        curve,
+        x_label='Number of data records / record dimension',
+        y_label='Communication cost (KB)',
+        title='',
         x_scale='log',
     )
-    save_figure(fig, '04_query_vs_result_size.png')
+    save_figure(fig, title_filename(chart_title))
+
+
+def chart_5_decrypt_vs_result_size_bar(run_missing):
+    result_sizes = [10, 100, 500, 1000, 5000, 10000]
+    categories = [str(value) for value in result_sizes]
+    chart_title = 'Decision Tree Decrypt Communication vs Data Scale (5 Schemes) bar'
+    curve = curve_decision_tree_only(
+        result_sizes,
+        combo_fn=lambda result_size: (result_size, result_size, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+        metric='decrypt_kb',
+        run_missing=run_missing,
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.7))
+    plot_grouped_bar_log(
+        ax,
+        categories,
+        curve,
+        x_label='Number of data records / record dimension',
+        y_label='Communication cost (KB)',
+        title='',
+    )
+    save_figure(fig, title_filename(chart_title))
+
+
+def _plot_structure_breakdown_vs_n(metric_specs, title_prefix, output_name, run_missing):
+    n_values = [16, 32, 64, 128, 256, 512]
+    decart_schemes = ['DeCart', 'DeCart*']
+    fig, axes = plt.subplots(2, 2, figsize=(14.0, 10.0))
+    axes = axes.flatten()
+
+    for ax, (metric, panel_title) in zip(axes, metric_specs):
+        curve = curve_decision_tree_only(
+            n_values,
+            combo_fn=lambda n_value: (DEFAULT_N, n_value, FIXED_DATA_SIZE, FIXED_DATA_SIZE, DEFAULT_POLICY_SIZE, DEFAULT_NUM_RUNS),
+            metric=metric,
+            run_missing=run_missing,
+        )
+        if metric.endswith('_pp_kb') or _series_identical(curve, decart_schemes):
+            plot_grouped_bar(
+                ax,
+                [str(value) for value in n_values],
+                curve,
+                x_label='Block size n',
+                y_label='Size (KB)',
+                title=panel_title,
+                schemes=decart_schemes,
+            )
+        else:
+            plot_multi_line(
+                ax,
+                n_values,
+                curve,
+                x_label='Block size n',
+                y_label='Size (KB)',
+                title=panel_title,
+                x_scale='log',
+                schemes=decart_schemes,
+            )
+
+        if metric.endswith('_crs_kb') or metric.endswith('_total_aux_kb'):
+            ax.set_yscale('log')
+            ax.set_ylabel('Size (KB, log scale)', fontsize=14)
+            style_axes(ax)
+
+    fig.suptitle(f'{title_prefix} Size vs Block Size (N = {DEFAULT_N})', fontsize=16)
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    save_figure(fig, output_name, out_dir=SIZE_OUT_DIR)
+
+
+def chart_6_setup_size_breakdown_vs_n(run_missing):
+    metric_specs = [
+        ('setup_crs_kb', 'Setup CRS Size'),
+        ('setup_pp_kb', 'Setup PP Size'),
+        ('setup_aux_kb', 'Setup AUX Size'),
+        ('setup_total_aux_kb', 'Setup Total Auxiliary Size'),
+    ]
+    _plot_structure_breakdown_vs_n(metric_specs, 'Setup', 'communication_06_setup_size_breakdown_vs_n.png', run_missing)
+
+
+def chart_7_register_size_breakdown_vs_n(run_missing):
+    metric_specs = [
+        ('register_crs_kb', 'Register CRS Size'),
+        ('register_pp_kb', 'Register PP Size'),
+        ('register_aux_kb', 'Register AUX Size'),
+        ('register_total_aux_kb', 'Register Total Auxiliary Size'),
+    ]
+    _plot_structure_breakdown_vs_n(metric_specs, 'Register', 'communication_07_register_size_breakdown_vs_n.png', run_missing)
+
+
+def chart_8_final_size_breakdown_vs_n(run_missing):
+    metric_specs = [
+        ('final_crs_kb', 'Final CRS Size'),
+        ('final_pp_kb', 'Final PP Size'),
+        ('final_aux_kb', 'Final AUX Size'),
+        ('final_total_aux_kb', 'Final Total Auxiliary Size'),
+    ]
+    _plot_structure_breakdown_vs_n(metric_specs, 'Final', 'communication_08_final_size_breakdown_vs_n.png', run_missing)
 
 
 def main():
@@ -452,10 +774,18 @@ def main():
     run_missing = not args.no_run_missing
 
     chart_0_parameter_overview()
-    chart_1_register_vs_users(run_missing)
+    chart_1_register_vs_n(run_missing)
     chart_2_encrypt_vs_records(run_missing)
-    chart_3_check_vs_model_size(run_missing)
-    chart_4_query_vs_result_size(run_missing)
+    chart_2_encrypt_vs_records_bar(run_missing)
+    chart_3_check_vs_records(run_missing)
+    chart_3_check_vs_records_bar(run_missing)
+    chart_4_query_vs_records(run_missing)
+    chart_4_query_vs_records_bar(run_missing)
+    chart_5_decrypt_vs_result_size(run_missing)
+    chart_5_decrypt_vs_result_size_bar(run_missing)
+    chart_6_setup_size_breakdown_vs_n(run_missing)
+    chart_7_register_size_breakdown_vs_n(run_missing)
+    chart_8_final_size_breakdown_vs_n(run_missing)
     print(f'All communication charts are saved in: {OUT_DIR}')
 
 

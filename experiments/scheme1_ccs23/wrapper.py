@@ -56,6 +56,7 @@ class CCS23ExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+                'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -147,12 +148,13 @@ class CCS23ExperimentWrapper:
         返回:
             (sk, pk) 这里返回虚拟值
         """
-        start = time.perf_counter()
-        
+        self.metrics['keygen_times'].append(0.0)
+
+        register_start = time.perf_counter()
         self.registered_users.add(user_id)
-        
-        elapsed = time.perf_counter() - start
-        self.metrics['keygen_times'].append(elapsed)
+
+        register_elapsed = time.perf_counter() - register_start
+        self.metrics['register_times'].append(register_elapsed)
         
         # CCS23 中不需要真正的密钥，返回虚拟值
         return user_id, f"dummy_pk_{user_id}"
@@ -348,6 +350,7 @@ class CCS23ExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+            'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],

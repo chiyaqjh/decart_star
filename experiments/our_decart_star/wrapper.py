@@ -48,6 +48,7 @@ class DeCartStarExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+                'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -166,13 +167,16 @@ class DeCartStarExperimentWrapper:
         返回:
             (sk, pk) 密钥对
         """
-        start = time.perf_counter()
-        
+        keygen_start = time.perf_counter()
         sk, pk, pap = self.curator.generate_user_key(user_id)
+        keygen_elapsed = time.perf_counter() - keygen_start
+
+        register_start = time.perf_counter()
         self.curator.register(user_id, pk, pap)
-        
-        elapsed = time.perf_counter() - start
-        self.metrics['keygen_times'].append(elapsed)
+
+        register_elapsed = time.perf_counter() - register_start
+        self.metrics['keygen_times'].append(keygen_elapsed)
+        self.metrics['register_times'].append(register_elapsed)
         
         return sk, pk
     
@@ -377,6 +381,7 @@ class DeCartStarExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+            'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],

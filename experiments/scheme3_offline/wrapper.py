@@ -61,6 +61,7 @@ class OfflineSchemeExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+                'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -164,6 +165,7 @@ class OfflineSchemeExperimentWrapper:
         
         elapsed = time.perf_counter() - start
         self.metrics['keygen_times'].append(elapsed)
+        self.metrics['register_times'].append(0.0)
         
         return sk, pk
     
@@ -441,6 +443,7 @@ class OfflineSchemeExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+            'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],

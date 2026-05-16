@@ -61,6 +61,7 @@ class ServerSchemeExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+                'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -152,12 +153,13 @@ class ServerSchemeExperimentWrapper:
         返回:
             (user_id, None) - 用户没有密钥
         """
-        start = time.perf_counter()
-        
+        self.metrics['keygen_times'].append(0.0)
+
+        register_start = time.perf_counter()
         self.registered_users.add(user_id)
-        
-        elapsed = time.perf_counter() - start
-        self.metrics['keygen_times'].append(elapsed)
+
+        register_elapsed = time.perf_counter() - register_start
+        self.metrics['register_times'].append(register_elapsed)
         
         # 用户没有密钥，所有加密用服务器公钥
         return user_id, None
@@ -399,6 +401,7 @@ class ServerSchemeExperimentWrapper:
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
+            'register_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],

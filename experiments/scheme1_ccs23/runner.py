@@ -65,6 +65,8 @@ class ExperimentRunner:
         for model_type in config.model_types:
             self.results['models'][model_type] = {
                 'setup_times': [],
+                'keygen_times': [],
+                'register_times': [],
                 'encrypt_times': [],
                 'query_times': [],
                 'decrypt_times': [],
@@ -139,12 +141,6 @@ class ExperimentRunner:
             weights_matrix = np.random.randn(output_dim, input_dim) * 0.1
             bias = np.random.randn(output_dim) * 0.1
             weights = weights_matrix.flatten().tolist()
-            
-            # 限制权重数量
-            max_weights = 500
-            if len(weights) > max_weights:
-                weights = weights[:max_weights]
-                print(f"     权重数量: {len(weights)} (已截断)")
             
             return {
                 'type': 'neural_network',
@@ -231,6 +227,8 @@ class ExperimentRunner:
 
             model_metrics = {
                 'setup_time': setup_time,
+                'keygen_times': wrapper.metrics['keygen_times'].copy(),
+                'register_times': wrapper.metrics['register_times'].copy(),
                 'encrypt_times': wrapper.metrics['encrypt_times'].copy(),
                 'query_time': query_time,
                 'decrypt_time': decrypt_time,
@@ -281,6 +279,8 @@ class ExperimentRunner:
                 if run_result:
                     # 累加结果
                     model_results['setup_times'].append(run_result.get('setup_time', 0))
+                    model_results['keygen_times'].extend(run_result.get('keygen_times', []))
+                    model_results['register_times'].extend(run_result.get('register_times', []))
                     model_results['encrypt_times'].extend(run_result['encrypt_times'])
                     model_results['query_times'].append(run_result['query_time'])
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
@@ -312,6 +312,8 @@ class ExperimentRunner:
                     
                     model_results['runs'].append({
                         'run_id': i,
+                        'keygen_times': run_result.get('keygen_times', []),
+                        'register_times': run_result.get('register_times', []),
                         'query_time': run_result['query_time'],
                         'decrypt_time': run_result['decrypt_time'],
                         'setup_auxiliary_sizes': setup_auxiliary_sizes,
@@ -348,6 +350,20 @@ class ExperimentRunner:
                 stats['std_setup_time'] = float(np.std(times))
                 stats['min_setup_time'] = float(np.min(times))
                 stats['max_setup_time'] = float(np.max(times))
+
+            if model_data['keygen_times']:
+                times = model_data['keygen_times']
+                stats['avg_keygen_time'] = float(np.mean(times))
+                stats['std_keygen_time'] = float(np.std(times))
+                stats['min_keygen_time'] = float(np.min(times))
+                stats['max_keygen_time'] = float(np.max(times))
+
+            if model_data['register_times']:
+                times = model_data['register_times']
+                stats['avg_register_time'] = float(np.mean(times))
+                stats['std_register_time'] = float(np.std(times))
+                stats['min_register_time'] = float(np.min(times))
+                stats['max_register_time'] = float(np.max(times))
             
             # 加密时间
             if model_data['encrypt_times']:

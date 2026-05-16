@@ -14,6 +14,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parents[3]
 RESULTS_ROOT = PROJECT_ROOT / 'experiments' / 'results'
 COMPARE_DIR = PROJECT_ROOT / 'experiments' / 'compare'
+OUTPUT_DIR = PROJECT_ROOT / 'experiments' / 'results' / 'pic_accuracy' / '计算_computation'
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 if str(COMPARE_DIR) not in sys.path:
@@ -38,59 +39,19 @@ FILL_COLORS = ['#90CAF9', '#FFE0B2', '#C8E6C9', '#E1BEE7', '#FFCDD2']
 HATCHES = ['////', '...', 'xx', 'oo', '++']
 STAGES = [
     ('avg_setup_time', 'Setup'),
+    ('avg_keygen_time', 'KeyGen'),
+    ('avg_register_time', 'Register'),
     ('avg_encrypt_time', 'Encrypt'),
     ('avg_query_time', 'Query'),
     ('avg_decrypt_time', 'Decrypt'),
 ]
-BROKEN_SCHEME = 'CCS23'
+DECART_ONLY_STAGES = {'Setup', 'KeyGen', 'Register'}
 
 
-def compute_break_config(stage_data):
-    positive_values = sorted(
-        value
-        for values in stage_data.values()
-        for value in values
-        if value > 0
-    )
-    if not positive_values:
-        return None
-
-    global_max = positive_values[-1]
-    low_cluster = [value for value in positive_values if value <= global_max * 0.1]
-    ccs_values = [value for value in stage_data.get(BROKEN_SCHEME, []) if value > 0]
-
-    if low_cluster:
-        lower_cap = max(low_cluster) * 1.2
-    elif ccs_values:
-        lower_cap = max(ccs_values) * 1.35
-    else:
-        lower_cap = positive_values[0] * 1.15
-
-    upper_candidates = [value for value in positive_values if value > lower_cap]
-    if not upper_candidates:
-        return None
-
-    upper_min = min(upper_candidates)
-    upper_max = max(upper_candidates)
-    if upper_min <= lower_cap * 1.6:
-        return None
-
-    return {
-        'lower_min': 0.0,
-        'lower_max': max(lower_cap, positive_values[0] * 1.05),
-        'upper_min': upper_min * 0.92,
-        'upper_max': upper_max * 1.08,
-    }
-
-
-def add_axis_break_marks(ax_top, ax_bottom):
-    delta = 0.012
-    kwargs = dict(color='#666', clip_on=False, linewidth=1.3)
-
-    ax_top.plot((-delta, +delta), (-delta, +delta), transform=ax_top.transAxes, **kwargs)
-    ax_top.plot((1 - delta, 1 + delta), (-delta, +delta), transform=ax_top.transAxes, **kwargs)
-    ax_bottom.plot((-delta, +delta), (1 - delta, 1 + delta), transform=ax_bottom.transAxes, **kwargs)
-    ax_bottom.plot((1 - delta, 1 + delta), (1 - delta, 1 + delta), transform=ax_bottom.transAxes, **kwargs)
+def schemes_for_stage(stage_label):
+    if stage_label in DECART_ONLY_STAGES:
+        return ['DeCart', 'DeCart*']
+    return SCHEMES
 
 
 def load_latest_match(scheme_name, n_value, total_users, num_records, record_dim, policy_size, num_runs, model_key):
@@ -146,95 +107,101 @@ def collect_stage_curves(n_values, total_users, num_records, record_dim, policy_
     return stage_curves, used_sources
 
 
-def plot_bar_chart(n_values, stage_curves, total_users, num_records, record_dim, policy_size, output_path):
-    x = np.arange(len(n_values), dtype=float)
-    bar_width = 0.16
-    center = (len(SCHEMES) - 1) / 2.0
+def _slugify_stage_label(stage_label):
+    return stage_label.lower().replace(' ', '_')
 
-    fig = plt.figure(figsize=(15.2, 9.6))
-    outer_grid = fig.add_gridspec(2, 2)
+
+def plot_single_stage_chart(n_values, stage_label, stage_values, total_users, num_records, record_dim, policy_size, output_path):
+    stage_schemes = schemes_for_stage(stage_label)
+    x = np.arange(len(n_values), dtype=float)
+    bar_width = 0.26 if len(stage_schemes) == 2 else 0.16
+    center = (len(stage_schemes) - 1) / 2.0
     legend_handles = []
 
-    for index, (_, stage_label) in enumerate(STAGES):
-        row = index // 2
-        col = index % 2
-        break_config = compute_break_config(stage_curves[stage_label])
+    fig = plt.figure(figsize=(9.8, 6.8))
+    ax_top = fig.add_subplot(111)
 
-        if break_config:
-            inner_grid = outer_grid[row, col].subgridspec(2, 1, height_ratios=[3.3, 1.2], hspace=0.05)
-            ax_top = fig.add_subplot(inner_grid[0])
-            ax_bottom = fig.add_subplot(inner_grid[1], sharex=ax_top)
-            plot_axes = [ax_top, ax_bottom]
-        else:
-            ax_top = fig.add_subplot(outer_grid[row, col])
-            ax_bottom = ax_top
-            plot_axes = [ax_top]
+    for index, scheme in enumerate(stage_schemes):
+        raw_values = stage_values[scheme]
+        bars = ax_top.bar(
+            x + (index - center) * bar_width,
+            raw_values,
+            width=bar_width,
+            label=scheme,
+            color=FILL_COLORS[SCHEMES.index(scheme)],
+            edgecolor=SCHEME_COLORS[SCHEMES.index(scheme)],
+            linewidth=1.5,
+            hatch=HATCHES[SCHEMES.index(scheme)],
+            zorder=3,
+        )
+        legend_handles.append(bars[0])
 
-        for index, scheme in enumerate(SCHEMES):
-            raw_values = stage_curves[stage_label][scheme]
-            bars = None
-            for ax in plot_axes:
-                current_bars = ax.bar(
-                    x + (index - center) * bar_width,
-                    raw_values,
-                    width=bar_width,
-                    label=scheme,
-                    color=FILL_COLORS[index],
-                    edgecolor=SCHEME_COLORS[index],
-                    linewidth=1.5,
-                    hatch=HATCHES[index],
-                    zorder=3,
-                )
-                if bars is None:
-                    bars = current_bars
-            if len(legend_handles) < len(SCHEMES):
-                legend_handles.append(bars[0])
+    ax_top.set_xticks(x)
+    ax_top.set_xticklabels([str(value) for value in n_values], fontsize=12)
+    ax_top.set_xlabel('Block size n', fontsize=14)
+    ax_top.set_ylabel('Latency (ms)', fontsize=14)
 
-        ax_top.set_title(stage_label, fontsize=15)
-        ax_bottom.set_xticks(x)
-        ax_bottom.set_xticklabels([str(value) for value in n_values], fontsize=12)
+    ax_top.grid(which='major', axis='y', linestyle='--', linewidth=1, color='#888', alpha=0.6, zorder=0)
+    all_values = [value for values in stage_values.values() for value in values]
+    axis_max = max(all_values) if all_values else 1.0
+    ax_top.set_ylim(0, max(axis_max * 1.08, 1.0))
 
-        for ax in plot_axes:
-            ax.grid(which='major', axis='y', linestyle='--', linewidth=1, color='#888', alpha=0.6, zorder=0)
+    ax_top.text(
+        0.03,
+        0.97,
+        f'{stage_label}\nN={total_users}',
+        transform=ax_top.transAxes,
+        ha='left',
+        va='top',
+        fontsize=14,
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='#cccccc', alpha=0.9),
+        zorder=4,
+    )
 
-        if break_config:
-            ax_top.set_ylim(break_config['upper_min'], break_config['upper_max'])
-            ax_bottom.set_ylim(break_config['lower_min'], break_config['lower_max'])
-            ax_top.spines['bottom'].set_visible(False)
-            ax_bottom.spines['top'].set_visible(False)
-            ax_top.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-            add_axis_break_marks(ax_top, ax_bottom)
-        else:
-            all_values = [value for values in stage_curves[stage_label].values() for value in values]
-            axis_max = max(all_values) if all_values else 1.0
-            ax_top.set_ylim(0, max(axis_max * 1.08, 1.0))
-
-        if col == 0:
-            ax_top.set_ylabel('Latency (ms)', fontsize=14)
-
-    fig.suptitle(f'Decision Tree Stage Latency vs n (N={total_users})', fontsize=17, y=0.97)
-    fig.supxlabel('Block size n', fontsize=14, y=0.095)
-
-    fig.legend(
+    ax_top.legend(
         legend_handles,
-        SCHEMES,
-        fontsize=11,
+        stage_schemes,
+        fontsize=10,
         frameon=True,
         edgecolor='#ccc',
-        loc='lower center',
-        bbox_to_anchor=(0.5, 0.035),
-        ncol=len(SCHEMES),
-        columnspacing=1.2,
-        handletextpad=0.6,
+        loc='upper left',
+        bbox_to_anchor=(0.02, 0.78),
+        ncol=1,
     )
 
     note = f'num_records={num_records}, record_dim={record_dim}, policy_size={policy_size}'
-    fig.text(0.5, 0.008, note, ha='center', va='bottom', fontsize=10, color='#555')
+    fig.text(
+        0.97,
+        0.08,
+        note,
+        ha='right',
+        va='bottom',
+        fontsize=10,
+        color='#555',
+        bbox=dict(boxstyle='round,pad=0.22', facecolor='white', edgecolor='#dddddd', alpha=0.85),
+    )
 
-    fig.subplots_adjust(left=0.075, right=0.99, top=0.9, bottom=0.2, wspace=0.18, hspace=0.38)
+    fig.subplots_adjust(left=0.1, right=0.96, top=0.88, bottom=0.16)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close(fig)
+
+
+def plot_stage_charts(n_values, stage_curves, total_users, num_records, record_dim, policy_size, output_path):
+    output_dir = output_path.parent
+    output_stem = output_path.stem
+    for _, stage_label in STAGES:
+        stage_output = output_dir / f'{output_stem}_{_slugify_stage_label(stage_label)}.png'
+        plot_single_stage_chart(
+            n_values=n_values,
+            stage_label=stage_label,
+            stage_values=stage_curves[stage_label],
+            total_users=total_users,
+            num_records=num_records,
+            record_dim=record_dim,
+            policy_size=policy_size,
+            output_path=stage_output,
+        )
 
 
 def main():
@@ -249,7 +216,7 @@ def main():
     parser.add_argument(
         '--output',
         type=str,
-        default=str(PROJECT_ROOT / 'experiments' / 'results' / 'pic_accuracy' / '计算' / 'decision_tree_n_latency_bar.png'),
+        default=str(OUTPUT_DIR / 'decision_tree_n_latency.png'),
     )
     args = parser.parse_args()
 
@@ -263,7 +230,7 @@ def main():
         model_key=args.model_key,
     )
     output_path = Path(args.output)
-    plot_bar_chart(
+    plot_stage_charts(
         n_values=args.n_values,
         stage_curves=stage_curves,
         total_users=args.N,
@@ -273,7 +240,7 @@ def main():
         output_path=output_path,
     )
 
-    print(f'Generated: {output_path}')
+    print(f'Generated charts under: {output_path.parent}')
     print('Sources used:')
     for n_value in args.n_values:
         print(f'  n={n_value}')
