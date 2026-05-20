@@ -49,6 +49,7 @@ class DeCartExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
                 'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -274,7 +275,9 @@ class DeCartExperimentWrapper:
             return None
         
         # 检查权限
+        check_start = time.perf_counter()
         C_M = querier.check_access(C_m)
+        self.metrics['check_times'].append(time.perf_counter() - check_start)
         if C_M is None:
             return None
         
@@ -401,6 +404,10 @@ class DeCartExperimentWrapper:
         if metrics['query_times']:
             metrics['avg_query_time'] = np.mean(metrics['query_times'])
             metrics['std_query_time'] = np.std(metrics['query_times'])
+
+        if metrics['check_times']:
+            metrics['avg_check_time'] = np.mean(metrics['check_times'])
+            metrics['std_check_time'] = np.std(metrics['check_times'])
         
         if metrics['decrypt_times']:
             metrics['avg_decrypt_time'] = np.mean(metrics['decrypt_times'])
@@ -419,6 +426,7 @@ class DeCartExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
             'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],

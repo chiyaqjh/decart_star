@@ -41,6 +41,7 @@ class ExperimentConfig:
     
     # 策略参数
     policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # 访问策略中的用户数
+    num_queriers: int = 1
     
     # 实验参数
     num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 重复运行次数
@@ -50,6 +51,8 @@ class ExperimentConfig:
     def __post_init__(self):
         if self.model_types is None:
             self.model_types = ['dot', 'decision_tree', 'neural_network']
+        if self.num_queriers < 1:
+            raise ValueError('num_queriers 必须至少为 1')
 
 
 class ExperimentRunner:
@@ -69,6 +72,7 @@ class ExperimentRunner:
                 'setup_times': [],
                 'keygen_times': [],
                 'register_times': [],
+                'check_times': [],
                 'encrypt_times': [],
                 'query_times': [],
                 'decrypt_times': [],
@@ -215,12 +219,15 @@ class ExperimentRunner:
             
             # 定义用户ID
             owner_id = 5
-            querier_id = 6
+            active_querier_id = owner_id + 1
+            if active_querier_id >= self.config.N:
+                raise ValueError(f"当前 N={self.config.N} 无法分配查询用户")
+            query_repetitions = self.config.num_queriers
             
             # 生成访问策略
             policy = list(range(min(self.config.policy_size, self.config.N - 2)))
             policy.append(owner_id)
-            policy.append(querier_id)
+            policy.append(active_querier_id)
             policy = list(set(policy))  # 去重
             
             # 注册所有用户
@@ -228,7 +235,7 @@ class ExperimentRunner:
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             
             # 建立信任关系
-            wrapper.curator.add_trust(querier_id, owner_id)
+            wrapper.curator.add_trust(active_querier_id, owner_id)
             
             # 生成测试数据
             data, _ = self.generate_test_data()
@@ -244,23 +251,32 @@ class ExperimentRunner:
             wrapper.store_dataset(owner_id, ds_id, C_m, sk_h_s)
             
             # 根据不同模型类型执行查询
+            total_results = 0
             if model_type == 'dot':
                 # 点积模型
-                print(f"\n🔍 执行点积查询...")
-                results = wrapper.execute_query(querier_id, owner_id, ds_id, model)
-                metrics = wrapper.get_metrics()
+                print(f"\n🔍 执行点积查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+                results = None
+                for _ in range(query_repetitions):
+                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                    if current_results is not None:
+                        results = current_results
+                        total_results += len(current_results)
                 
-                query_time = metrics['query_times'][-1] if metrics['query_times'] else 0
-                decrypt_time = metrics['decrypt_times'][-1] if metrics['decrypt_times'] else 0
+                query_time = float(np.sum(wrapper.metrics['query_times'])) if wrapper.metrics['query_times'] else 0
+                decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'neural_network':
                 # 神经网络模型
-                print(f"\n🧠 执行神经网络查询...")
-                results = wrapper.execute_query(querier_id, owner_id, ds_id, model)
-                metrics = wrapper.get_metrics()
+                print(f"\n🧠 执行神经网络查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+                results = None
+                for _ in range(query_repetitions):
+                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                    if current_results is not None:
+                        results = current_results
+                        total_results += len(current_results)
                 
-                query_time = metrics['query_times'][-1] if metrics['query_times'] else 0
-                decrypt_time = metrics['decrypt_times'][-1] if metrics['decrypt_times'] else 0
+                query_time = float(np.sum(wrapper.metrics['query_times'])) if wrapper.metrics['query_times'] else 0
+                decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'decision_tree':
                 # 决策树特殊处理
@@ -268,6 +284,7 @@ class ExperimentRunner:
                 
                 # 获取公钥
                 pk_h = wrapper.curator.system.he.public_key
+                encrypt_model_start = time.perf_counter()
                 
                 # 加密决策树
                 if hasattr(wrapper.curator.system, 'encrypt_decision_tree'):
@@ -316,70 +333,73 @@ class ExperimentRunner:
                             'nodes': model.get('nodes', []) if isinstance(model, dict) else []
                         }
                         print(f"     使用字典格式")
+                wrapper.metrics['encrypt_times'].append(time.perf_counter() - encrypt_model_start)
                 
-                # 检查权限
-                querier = wrapper.create_querier(querier_id)
-                C_M = querier.check_access(C_m)
-                
-                if C_M is None:
-                    print(f"      决策树访问检查失败")
-                    return None
-                
-                # 设置加密模型
-                C_M['encrypted_model'] = encrypted_model
-                C_M['model_type'] = 'decision_tree'
-                C_M['access_granted'] = True
+                query_times = []
+                decrypt_times = []
+                results = None
+                for _ in range(query_repetitions):
+                    querier = wrapper.create_querier(active_querier_id)
+                    check_start = time.perf_counter()
+                    C_M = querier.check_access(C_m)
+                    wrapper.metrics['check_times'].append(time.perf_counter() - check_start)
 
-                # 记录查询请求阶段通信量（统一口径）
-                req_payload = {
-                    'querier_id': querier_id,
-                    'owner_id': owner_id,
-                    'dataset_id': ds_id,
-                    'encrypted_model': C_M.get('encrypted_model'),
-                    'model_type': C_M.get('model_type')
-                }
-                req_size = wrapper._safe_obj_size(req_payload)
-                wrapper.metrics['communication_sizes'].append({
-                    'type': 'query',
-                    'size': req_size,
-                    'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
-                })
-                
-                # 确保有 sk_h_u
-                if 'sk_h_u' not in C_M:
-                    C_M['sk_h_u'] = b'demo_secret_key'
-                
-                # 执行查询
-                print(f"   执行加密决策树查询...")
-                start_query = time.perf_counter()
-                
-                # 调用系统 query 方法
-                ER = wrapper.curator.system.query(C_M, C_m, sk_h_s)
-                
-                query_time = time.perf_counter() - start_query
-                print(f"   查询时间: {query_time*1000:.2f} ms")
-                
-                # 解密结果
-                if ER is not None:
-                    # 记录返回包阶段通信量（决策树分支）
-                    res_size = wrapper._safe_obj_size(ER)
+                    if C_M is None:
+                        print(f"      决策树访问检查失败，querier={active_querier_id}")
+                        return None
+
+                    C_M['encrypted_model'] = encrypted_model
+                    C_M['model_type'] = 'decision_tree'
+                    C_M['access_granted'] = True
+
+                    req_payload = {
+                        'querier_id': active_querier_id,
+                        'owner_id': owner_id,
+                        'dataset_id': ds_id,
+                        'encrypted_model': C_M.get('encrypted_model'),
+                        'model_type': C_M.get('model_type')
+                    }
+                    req_size = wrapper._safe_obj_size(req_payload)
                     wrapper.metrics['communication_sizes'].append({
-                        'type': 'decrypt',
-                        'size': res_size,
+                        'type': 'query',
+                        'size': req_size,
                         'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
                     })
 
-                    start_decrypt = time.perf_counter()
-                    results = wrapper.curator.system.decrypt(C_M['sk_h_u'], ER)
-                    decrypt_time = time.perf_counter() - start_decrypt
-                    print(f"   解密时间: {decrypt_time*1000:.2f} ms")
-                    print(f"   结果数量: {len(results) if results else 0}")
-                    if results:
-                        print(f"   结果示例: {results[:3]}")
-                else:
-                    results = None
-                    decrypt_time = 0
-                    print(f"      查询失败，返回空结果")
+                    if 'sk_h_u' not in C_M:
+                        C_M['sk_h_u'] = b'demo_secret_key'
+
+                    print(f"   执行加密决策树查询... querier={active_querier_id}")
+                    start_query = time.perf_counter()
+                    ER = wrapper.curator.system.query(C_M, C_m, sk_h_s)
+                    single_query_time = time.perf_counter() - start_query
+                    query_times.append(single_query_time)
+                    print(f"   查询时间: {single_query_time*1000:.2f} ms")
+
+                    if ER is not None:
+                        res_size = wrapper._safe_obj_size(ER)
+                        wrapper.metrics['communication_sizes'].append({
+                            'type': 'decrypt',
+                            'size': res_size,
+                            'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
+                        })
+
+                        start_decrypt = time.perf_counter()
+                        current_results = wrapper.curator.system.decrypt(C_M['sk_h_u'], ER)
+                        single_decrypt_time = time.perf_counter() - start_decrypt
+                        decrypt_times.append(single_decrypt_time)
+                        if current_results is not None:
+                            results = current_results
+                            total_results += len(current_results)
+                        print(f"   解密时间: {single_decrypt_time*1000:.2f} ms")
+                        print(f"   结果数量: {len(current_results) if current_results else 0}")
+                        if current_results:
+                            print(f"   结果示例: {current_results[:3]}")
+                    else:
+                        print(f"      查询失败，返回空结果")
+
+                query_time = float(np.sum(query_times)) if query_times else 0
+                decrypt_time = float(np.sum(decrypt_times)) if decrypt_times else 0
             
             else:
                 print(f"      未知模型类型: {model_type}")
@@ -399,12 +419,24 @@ class ExperimentRunner:
                         phase_comm['decrypt'] += s
 
             final_auxiliary_sizes = wrapper.get_auxiliary_sizes()
+            keygen_times = wrapper.metrics['keygen_times']
+            register_times = wrapper.metrics['register_times']
+            check_times = wrapper.metrics['check_times']
+            encrypt_times = wrapper.metrics['encrypt_times']
+            communication_sizes = [
+                s.get('size', 0) if isinstance(s, dict) else s
+                for s in wrapper.metrics['communication_sizes']
+            ]
 
             model_metrics = {
                 'setup_time': setup_time,
-                'keygen_times': wrapper.metrics['keygen_times'].copy(),
-                'register_times': wrapper.metrics['register_times'].copy(),
-                'encrypt_times': wrapper.metrics['encrypt_times'].copy(),
+                'keygen_times': keygen_times.copy(),
+                'keygen_time': float(np.sum(keygen_times)) if keygen_times else 0,
+                'register_times': register_times.copy(),
+                'register_time': float(np.sum(register_times)) if register_times else 0,
+                'check_time': float(np.sum(check_times)) if check_times else 0,
+                'encrypt_times': encrypt_times.copy(),
+                'encrypt_time': float(np.sum(encrypt_times)) if encrypt_times else 0,
                 'query_time': query_time,
                 'decrypt_time': decrypt_time,
                 'setup_auxiliary_sizes': setup_auxiliary_sizes.copy(),
@@ -412,11 +444,12 @@ class ExperimentRunner:
                 'final_auxiliary_sizes': final_auxiliary_sizes.copy(),
                 'communication_sizes': [s.copy() if isinstance(s, dict) else s 
                                        for s in wrapper.metrics['communication_sizes']],
+                'communication_size': float(np.sum(communication_sizes)) if communication_sizes else 0,
                 'comm_upload_size': phase_comm['upload'],
                 'comm_query_size': phase_comm['query'],
                 'comm_decrypt_size': phase_comm['decrypt'],
                 'success': results is not None,
-                'num_results': len(results) if results else 0
+                'num_results': total_results
             }
             
             if results:
@@ -453,11 +486,13 @@ class ExperimentRunner:
                 if run_result:
                     # 累加结果
                     model_results['setup_times'].append(run_result.get('setup_time', 0))
-                    model_results['keygen_times'].extend(run_result.get('keygen_times', []))
-                    model_results['register_times'].extend(run_result.get('register_times', []))
-                    model_results['encrypt_times'].extend(run_result['encrypt_times'])
+                    model_results['keygen_times'].append(run_result.get('keygen_time', 0))
+                    model_results['register_times'].append(run_result.get('register_time', 0))
+                    model_results['check_times'].append(run_result.get('check_time', 0))
+                    model_results['encrypt_times'].append(run_result.get('encrypt_time', 0))
                     model_results['query_times'].append(run_result['query_time'])
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
+                    model_results['communication_sizes'].append(run_result.get('communication_size', 0))
                     model_results['comm_upload_sizes'].append(run_result.get('comm_upload_size', 0))
                     model_results['comm_query_sizes'].append(run_result.get('comm_query_size', 0))
                     model_results['comm_decrypt_sizes'].append(run_result.get('comm_decrypt_size', 0))
@@ -478,18 +513,18 @@ class ExperimentRunner:
                     model_results['final_aux_sizes'].append(final_auxiliary_sizes.get('aux_size_bytes', 0))
                     model_results['final_total_auxiliary_sizes'].append(final_auxiliary_sizes.get('total_auxiliary_size_bytes', 0))
                     
-                    for comm in run_result['communication_sizes']:
-                        if isinstance(comm, dict):
-                            model_results['communication_sizes'].append(comm.get('size', 0))
-                        else:
-                            model_results['communication_sizes'].append(comm)
-                    
                     model_results['runs'].append({
                         'run_id': i,
                         'keygen_times': run_result.get('keygen_times', []),
+                        'keygen_time': run_result.get('keygen_time', 0),
                         'register_times': run_result.get('register_times', []),
+                        'register_time': run_result.get('register_time', 0),
+                        'check_time': run_result.get('check_time', 0),
+                        'encrypt_times': run_result.get('encrypt_times', []),
+                        'encrypt_time': run_result.get('encrypt_time', 0),
                         'query_time': run_result['query_time'],
                         'decrypt_time': run_result['decrypt_time'],
+                        'communication_size': run_result.get('communication_size', 0),
                         'setup_auxiliary_sizes': setup_auxiliary_sizes,
                         'register_auxiliary_sizes': register_auxiliary_sizes,
                         'final_auxiliary_sizes': final_auxiliary_sizes,
@@ -538,6 +573,13 @@ class ExperimentRunner:
                 stats['std_register_time'] = float(np.std(times))
                 stats['min_register_time'] = float(np.min(times))
                 stats['max_register_time'] = float(np.max(times))
+
+            if model_data['check_times']:
+                times = model_data['check_times']
+                stats['avg_check_time'] = float(np.mean(times))
+                stats['std_check_time'] = float(np.std(times))
+                stats['min_check_time'] = float(np.min(times))
+                stats['max_check_time'] = float(np.max(times))
             
             # 加密时间
             if model_data['encrypt_times']:
@@ -644,10 +686,12 @@ if __name__ == "__main__":
     parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
     parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
     parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
+    parser.add_argument("--num-queriers", type=int, default=1, help="真实查询者数量")
     parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
     parser.add_argument("--model-types", nargs="+", 
                        default=['dot', 'decision_tree', 'neural_network'],
                        help="模型类型列表")
+    parser.add_argument("--results-dir", type=str, default="experiments/results/our_decart", help="结果保存目录")
     parser.add_argument("--no-save", action="store_true", help="不保存结果")
     
     args = parser.parse_args()
@@ -661,8 +705,10 @@ if __name__ == "__main__":
     print(f"   num-records: {args.num_records}")
     print(f"   record-dim: {args.record_dim}")
     print(f"   policy-size: {args.policy_size}")
+    print(f"   num-queriers: {args.num_queriers}")
     print(f"   num-runs: {args.num_runs}")
     print(f"   model-types: {args.model_types}")
+    print(f"   results-dir: {args.results_dir}")
     print(f"   save-results: {not args.no_save}")
     
     config = ExperimentConfig(
@@ -671,10 +717,11 @@ if __name__ == "__main__":
         num_records=args.num_records,
         record_dim=args.record_dim,
         policy_size=args.policy_size,
+        num_queriers=args.num_queriers,
         model_types=args.model_types,
         num_runs=args.num_runs,
         save_results=not args.no_save,
-        results_dir="experiments/results/our_decart"
+        results_dir=args.results_dir
     )
     
     # 直接运行

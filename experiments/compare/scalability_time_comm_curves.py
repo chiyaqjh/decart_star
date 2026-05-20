@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_ROOT = PROJECT_ROOT / 'experiments' / 'results'
 PIC_DIR = get_pic_accuracy_dir(PROJECT_ROOT)
 
-SCHEMES = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
+SCHEMES = ['DeCart', 'DeCart*', 'Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
 SCHEME_INFO = {
     'DeCart': {
         'result_folder': 'our_decart',
@@ -35,9 +35,9 @@ SCHEME_INFO = {
         'result_folder': 'our_decart_star',
         'runner': PROJECT_ROOT / 'experiments' / 'our_decart_star' / 'runner.py',
     },
-    'CCS23': {
-        'result_folder': 'scheme1_ccs23',
-        'runner': PROJECT_ROOT / 'experiments' / 'scheme1_ccs23' / 'runner.py',
+    'Naive CCS-2023': {
+        'result_folder': 'naive_ccs23',
+        'runner': PROJECT_ROOT / 'experiments' / 'naive_ccs23' / 'runner.py',
     },
     'Server': {
         'result_folder': 'scheme2_server',
@@ -47,14 +47,19 @@ SCHEME_INFO = {
         'result_folder': 'scheme3_offline',
         'runner': PROJECT_ROOT / 'experiments' / 'scheme3_offline' / 'runner.py',
     },
+    'SecPQ': {
+        'result_folder': 'secpq',
+        'runner': PROJECT_ROOT / 'experiments' / 'secpq' / 'runner.py',
+    },
 }
 
 COLORS = {
     'DeCart': '#1f77b4',
     'DeCart*': '#ff7f0e',
-    'CCS23': '#2ca02c',
+    'Naive CCS-2023': '#2ca02c',
     'Server': '#d62728',
     'Offline': '#9467bd',
+    'SecPQ': '#8c564b',
 }
 
 OUT_FIXED_N = PIC_DIR / 'scalability_fixed_n_time_comm.png'
@@ -338,7 +343,7 @@ def _plot(curve, x_values, x_label, title, out_path, use_num_records, plot_kind=
     x_offsets = {s: (i - center) * offset_step for i, s in enumerate(schemes)}
     markers = ['o', 's', '^', 'D', 'P', 'X', 'v', '*']
     linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (1, 1))]
-    bar_hatches = ['/////', '.....', '|||||', 'xxxxx', '+++++']
+    bar_hatches = ['/////', '.....', '|||||', 'xxxxx', '+++++', '----']
     bar_width = 0.8 / max(1, len(schemes))
 
     for ax, metric in zip(axes, ['lat', 'comm']):  # Explicitly plot 'lat' and 'comm'

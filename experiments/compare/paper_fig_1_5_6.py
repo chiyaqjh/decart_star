@@ -26,21 +26,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_ROOT = PROJECT_ROOT / 'experiments' / 'results'
 PIC_DIR = get_pic_accuracy_dir(PROJECT_ROOT)
 
-SCHEMES = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
+SCHEMES = ['DeCart', 'DeCart*', 'Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
 FOLDERS = {
     'DeCart': 'our_decart',
     'DeCart*': 'our_decart_star',
-    'CCS23': 'scheme1_ccs23',
+    'Naive CCS-2023': 'naive_ccs23',
     'Server': 'scheme2_server',
     'Offline': 'scheme3_offline',
+    'SecPQ': 'secpq',
 }
 MODELS = [('dot', 'Dot Product'), ('decision_tree', 'Decision Tree'), ('neural_network', 'Neural Network')]
 COLORS = {
     'DeCart': '#1f77b4',
     'DeCart*': '#ff7f0e',
-    'CCS23': '#2ca02c',
+    'Naive CCS-2023': '#2ca02c',
     'Server': '#d62728',
     'Offline': '#9467bd',
+    'SecPQ': '#8c564b',
 }
 
 OUT_FIG1 = PIC_DIR / 'fig1_correctness_cost_tradeoff.png'
@@ -120,7 +122,7 @@ def plot_item1_tradeoff(data):
 
     handles, labels = axes[0].get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    fig.legend(by_label.values(), by_label.keys(), loc='lower center', ncol=5, fontsize=9, frameon=False)
+    fig.legend(by_label.values(), by_label.keys(), loc='lower center', ncol=6, fontsize=9, frameon=False)
 
     plt.tight_layout(rect=[0, 0.08, 1, 0.93])
     plt.savefig(OUT_FIG1, dpi=160, bbox_inches='tight')

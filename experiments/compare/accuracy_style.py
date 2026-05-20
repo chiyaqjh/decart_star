@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def get_pic_accuracy_dir(project_root: str) -> Path:
-    out = Path(project_root) / 'experiments' / 'results' / 'pic_accuracy'
+    out = Path(project_root) / 'experiments' / 'results' / 'pic_new'
     out.mkdir(parents=True, exist_ok=True)
     return out
 

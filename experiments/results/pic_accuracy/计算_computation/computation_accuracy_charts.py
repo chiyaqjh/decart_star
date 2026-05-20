@@ -280,47 +280,81 @@ def metric_for_scheme(data, metric, model_key=None):
         return float('nan')
 
     models = data.get('models', {})
+    summary = data.get('summary', {})
+
+    def _summary_ms(block, key):
+        value = block.get(key)
+        if value is None:
+            return float('nan')
+        return float(value) * 1000.0
 
     if model_key is not None:
         block = models.get(model_key, {})
+        summary_block = summary.get(model_key, {})
         if metric == 'check_ms':
+            value = _summary_ms(summary_block, 'avg_check_time')
+            if not np.isnan(value):
+                return value
             if block.get('check_times'):
                 return _mean_ms(block.get('check_times'))
-            return _mean_ms_or_nan(block.get('query_times'))
+            return float('nan')
         if metric == 'keygen_ms':
+            value = _summary_ms(summary_block, 'avg_keygen_time')
+            if not np.isnan(value):
+                return value
             return _mean_ms_or_nan(block.get('keygen_times'))
         if metric == 'register_ms':
+            value = _summary_ms(summary_block, 'avg_register_time')
+            if not np.isnan(value):
+                return value
             return _mean_ms_or_nan(block.get('register_times'))
         if metric == 'total_ms':
-            encrypt_ms = _mean_ms_or_nan(block.get('encrypt_times'))
-            query_ms = _mean_ms_or_nan(block.get('query_times'))
-            decrypt_ms = _mean_ms_or_nan(block.get('decrypt_times'))
+            encrypt_ms = _summary_ms(summary_block, 'avg_encrypt_time')
+            query_ms = _summary_ms(summary_block, 'avg_query_time')
+            decrypt_ms = _summary_ms(summary_block, 'avg_decrypt_time')
+            if np.isnan(encrypt_ms):
+                encrypt_ms = _mean_ms_or_nan(block.get('encrypt_times'))
+            if np.isnan(query_ms):
+                query_ms = _mean_ms_or_nan(block.get('query_times'))
+            if np.isnan(decrypt_ms):
+                decrypt_ms = _mean_ms_or_nan(block.get('decrypt_times'))
             if np.isnan(encrypt_ms) or np.isnan(query_ms) or np.isnan(decrypt_ms):
                 return float('nan')
             return encrypt_ms + query_ms + decrypt_ms
         return _mean_ms_or_nan(block.get(metric))
 
     values = []
-    for _, block in models.items():
+    for block_name, block in models.items():
+        summary_block = summary.get(block_name, {})
         if metric == 'check_ms':
+            value = _summary_ms(summary_block, 'avg_check_time')
+            if not np.isnan(value):
+                values.append(value)
+                continue
             if block.get('check_times'):
                 values.append(_mean_ms(block.get('check_times')))
-            else:
-                query_ms = _mean_ms_or_nan(block.get('query_times'))
-                if not np.isnan(query_ms):
-                    values.append(query_ms)
         elif metric == 'keygen_ms':
-            value = _mean_ms_or_nan(block.get('keygen_times'))
+            value = _summary_ms(summary_block, 'avg_keygen_time')
+            if np.isnan(value):
+                value = _mean_ms_or_nan(block.get('keygen_times'))
             if not np.isnan(value):
                 values.append(value)
         elif metric == 'register_ms':
-            value = _mean_ms_or_nan(block.get('register_times'))
+            value = _summary_ms(summary_block, 'avg_register_time')
+            if np.isnan(value):
+                value = _mean_ms_or_nan(block.get('register_times'))
             if not np.isnan(value):
                 values.append(value)
         elif metric == 'total_ms':
-            encrypt_ms = _mean_ms_or_nan(block.get('encrypt_times'))
-            query_ms = _mean_ms_or_nan(block.get('query_times'))
-            decrypt_ms = _mean_ms_or_nan(block.get('decrypt_times'))
+            encrypt_ms = _summary_ms(summary_block, 'avg_encrypt_time')
+            query_ms = _summary_ms(summary_block, 'avg_query_time')
+            decrypt_ms = _summary_ms(summary_block, 'avg_decrypt_time')
+            if np.isnan(encrypt_ms):
+                encrypt_ms = _mean_ms_or_nan(block.get('encrypt_times'))
+            if np.isnan(query_ms):
+                query_ms = _mean_ms_or_nan(block.get('query_times'))
+            if np.isnan(decrypt_ms):
+                decrypt_ms = _mean_ms_or_nan(block.get('decrypt_times'))
             if not (np.isnan(encrypt_ms) or np.isnan(query_ms) or np.isnan(decrypt_ms)):
                 values.append(encrypt_ms + query_ms + decrypt_ms)
         else:

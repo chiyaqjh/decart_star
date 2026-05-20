@@ -12,16 +12,17 @@ from accuracy_style import apply_accuracy_style
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PIC_OUT_DIR = PROJECT_ROOT / 'experiments' / 'results' / 'pic_accuracy'
+PIC_OUT_DIR = PROJECT_ROOT / 'experiments' / 'results' / 'pic_new'
 PIC_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SCHEMES = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
+SCHEMES = ['DeCart', 'DeCart*', 'Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
 RESULT_DIRS = {
     'DeCart': 'our_decart',
     'DeCart*': 'our_decart_star',
-    'CCS23': 'scheme1_ccs23',
+    'Naive CCS-2023': 'naive_ccs23',
     'Server': 'scheme2_server',
     'Offline': 'scheme3_offline',
+    'SecPQ': 'secpq',
 }
 SIZE_VALUES = [32, 64, 128]
 MODEL_KEYS = ['dot', 'decision_tree', 'neural_network']
@@ -34,8 +35,8 @@ PHASES = [
 apply_accuracy_style()
 
 # accuracy.py palette + hatch style
-EDGE_COLORS = ['#F27970', '#BB9727', '#54B345', '#32B897', '#05B9E2']
-HATCHES = ['-----', '/////', '|||||', '.....', 'xxxxx']
+EDGE_COLORS = ['#F27970', '#BB9727', '#54B345', '#32B897', '#05B9E2', '#8D6E63']
+HATCHES = ['-----', '/////', '|||||', '.....', 'xxxxx', '+++++']
 
 
 def find_latest_result_by_size(scheme: str, size: int, policy_size: int = None, num_runs: int = None):
@@ -159,11 +160,11 @@ def draw_communication_chart():
 
             x = np.arange(len(SCHEMES))
             vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in SCHEMES]
-            ccs23_val = comm_by_size[size]['CCS23']['phase_kb'][phase_key]
-            other_vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in SCHEMES if scheme != 'CCS23']
+            baseline_val = comm_by_size[size]['Naive CCS-2023']['phase_kb'][phase_key]
+            other_vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in SCHEMES if scheme != 'Naive CCS-2023']
 
-            lower_min = max(0.0, np.floor((ccs23_val - 1.0) / 2.0) * 2.0)
-            lower_max = np.ceil((ccs23_val + 1.0) / 2.0) * 2.0
+            lower_min = max(0.0, np.floor((baseline_val - 1.0) / 2.0) * 2.0)
+            lower_max = np.ceil((baseline_val + 1.0) / 2.0) * 2.0
             other_min = min(other_vals)
             other_max = max(other_vals)
             span = max(other_max - other_min, 1.0)
@@ -177,10 +178,10 @@ def draw_communication_chart():
 
             bars_top = []
             for i, val in enumerate(vals):
-                is_ccs23 = (SCHEMES[i] == 'CCS23')
-                face_col = EDGE_COLORS[i] if is_ccs23 else 'none'
-                fill_alpha = 0.45 if is_ccs23 else 0.99
-                lw = 2.3 if is_ccs23 else 1.2
+                is_baseline = (SCHEMES[i] == 'Naive CCS-2023')
+                face_col = EDGE_COLORS[i] if is_baseline else 'none'
+                fill_alpha = 0.45 if is_baseline else 0.99
+                lw = 2.3 if is_baseline else 1.2
                 bt = top_ax.bar(
                     x[i],
                     val,
@@ -240,7 +241,7 @@ def draw_communication_chart():
         )
 
     fig.subplots_adjust(left=0.07, right=0.98, bottom=0.10, top=0.88, wspace=0.22, hspace=0.14)
-    out = PIC_OUT_DIR / 'communication_5schemes_breakpoint.png'
+    out = PIC_OUT_DIR / 'communication_6schemes_breakpoint.png'
     plt.savefig(out, dpi=300)
     plt.close()
     print(out)
@@ -265,10 +266,10 @@ def draw_communication_chart_no_break_scientific():
 
             bars = []
             for i, val in enumerate(vals):
-                is_ccs23 = (SCHEMES[i] == 'CCS23')
-                face_col = EDGE_COLORS[i] if is_ccs23 else 'none'
-                fill_alpha = 0.45 if is_ccs23 else 0.99
-                lw = 2.3 if is_ccs23 else 1.2
+                is_baseline = (SCHEMES[i] == 'Naive CCS-2023')
+                face_col = EDGE_COLORS[i] if is_baseline else 'none'
+                fill_alpha = 0.45 if is_baseline else 0.99
+                lw = 2.3 if is_baseline else 1.2
                 b = ax.bar(
                     x[i],
                     val,
@@ -319,7 +320,7 @@ def draw_communication_chart_no_break_scientific():
         )
 
     fig.subplots_adjust(left=0.07, right=0.98, bottom=0.10, top=0.88, wspace=0.22, hspace=0.28)
-    out = PIC_OUT_DIR / 'communication_5schemes_exponential_axis.png'
+    out = PIC_OUT_DIR / 'communication_6schemes_exponential_axis.png'
     plt.savefig(out, dpi=300)
     plt.close()
     print(out)

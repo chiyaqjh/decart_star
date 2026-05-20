@@ -62,6 +62,7 @@ class ServerSchemeExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
                 'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -282,8 +283,14 @@ class ServerSchemeExperimentWrapper:
         if owner_id not in self.encrypted_datasets or dataset_id not in self.encrypted_datasets[owner_id]:
             print(f"     数据集不存在")
             return None
-        
-        dataset_info = self.encrypted_datasets[owner_id][dataset_id]
+
+        check_start = time.perf_counter()
+        dataset_info = self.encrypted_datasets.get(owner_id, {}).get(dataset_id)
+        self.metrics['check_times'].append(time.perf_counter() - check_start)
+
+        if dataset_info is None:
+            return None
+
         encrypted_data = dataset_info['encrypted_data']
         
         # 加密模型
@@ -402,6 +409,7 @@ class ServerSchemeExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
             'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -421,6 +429,10 @@ class ServerSchemeExperimentWrapper:
         if metrics['query_times']:
             metrics['avg_query_time'] = np.mean(metrics['query_times'])
             metrics['std_query_time'] = np.std(metrics['query_times'])
+
+        if metrics['check_times']:
+            metrics['avg_check_time'] = np.mean(metrics['check_times'])
+            metrics['std_check_time'] = np.std(metrics['check_times'])
         
         if metrics['decrypt_times']:
             metrics['avg_decrypt_time'] = np.mean(metrics['decrypt_times'])

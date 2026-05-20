@@ -1,7 +1,7 @@
 """
-Generate five-scheme comparison figures with configuration-matched result files.
+Generate multi-scheme comparison figures with configuration-matched result files.
 
-This avoids mixing files from different sizes (e.g. CCS23=32 while others=128).
+This avoids mixing files from different sizes across all baselines.
 """
 
 import argparse
@@ -25,11 +25,12 @@ ROOT = 'E:/decart/experiments/results'
 PIC_DIR = str(get_pic_accuracy_dir('E:/decart'))
 
 SCHEME_FOLDERS = {
-    'CCS23': 'scheme1_ccs23',
+    'Naive CCS-2023': 'naive_ccs23',
     'Server': 'scheme2_server',
     'Offline': 'scheme3_offline',
     'DeCart': 'our_decart',
     'DeCart*': 'our_decart_star',
+    'SecPQ': 'secpq',
 }
 
 MODEL_KEYS = ['dot', 'decision_tree', 'neural_network']
@@ -71,7 +72,7 @@ def generate_3x3(loaded):
     schemes = list(SCHEME_FOLDERS.keys())
 
     fig, axes = plt.subplots(3, 3, figsize=(16, 12.5), sharex=False)
-    fig.suptitle('Five-Scheme Comparison', fontsize=20, fontweight='bold')
+    fig.suptitle('Six-Scheme Comparison', fontsize=20, fontweight='bold')
 
     phase_styles = {
         'encrypt_times': {'edgecolor': '#3A5A98', 'hatch': '/////'},
@@ -101,14 +102,15 @@ def generate_3x3(loaded):
             ymax = max(vals_ms) if vals_ms else 1.0
             ax.set_ylim(0, ymax * 2.5 if ymax > 0 else 1.0)
 
-            # Make CCS23 bar more noticeable without changing data values.
-            ccs_bar = bars[0]
-            ccs_bar.set_hatch('////')
-            ccs_bar.set_edgecolor('#111111')
-            ccs_bar.set_linewidth(2.0)
+            # Make Naive CCS-2023 bar more noticeable without changing data values.
+            baseline_idx = schemes.index('Naive CCS-2023')
+            baseline_bar = bars[baseline_idx]
+            baseline_bar.set_hatch('////')
+            baseline_bar.set_edgecolor('#111111')
+            baseline_bar.set_linewidth(2.0)
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    out = _save_path('five_scheme_comparison')
+    out = _save_path('six_scheme_comparison')
     plt.savefig(out, dpi=150, bbox_inches='tight')
     plt.close()
     return out
@@ -174,22 +176,23 @@ def generate_avg(loaded):
     )
     ax.set_ylim(0.0, max(1.0, ymax * 1.35))
 
-    # Make CCS23 bars easier to notice without changing values.
+    # Make Naive CCS-2023 bars easier to notice without changing values.
     for bars in [bars1, bars2, bars3]:
-        ccs_bar = bars[0]
-        ccs_bar.set_hatch('////')
-        ccs_bar.set_edgecolor('#111111')
-        ccs_bar.set_linewidth(2.0)
+        baseline_idx = schemes.index('Naive CCS-2023')
+        baseline_bar = bars[baseline_idx]
+        baseline_bar.set_hatch('////')
+        baseline_bar.set_edgecolor('#111111')
+        baseline_bar.set_linewidth(2.0)
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    out = _save_path('five_scheme_avg_time')
+    out = _save_path('six_scheme_avg_time')
     plt.savefig(out, dpi=150, bbox_inches='tight')
     plt.close()
     return out
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate five-scheme figures with matched configs.')
+    parser = argparse.ArgumentParser(description='Generate multi-scheme figures with matched configs.')
     parser.add_argument('--num-records', type=int, default=128)
     parser.add_argument('--record-dim', type=int, default=128)
     parser.add_argument('--policy-size', type=int, default=10)

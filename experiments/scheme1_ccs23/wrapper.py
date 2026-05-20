@@ -57,6 +57,7 @@ class CCS23ExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
                 'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -238,6 +239,10 @@ class CCS23ExperimentWrapper:
         data = dataset_info['data']
         policy = dataset_info['policy']
 
+        check_start = time.perf_counter()
+        _authorized = querier_id in policy
+        self.metrics['check_times'].append(time.perf_counter() - check_start)
+
         # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
         req_payload = {
             'querier_id': querier_id,
@@ -351,6 +356,7 @@ class CCS23ExperimentWrapper:
             'setup_time': 0,
             'keygen_times': [],
             'register_times': [],
+            'check_times': [],
             'encrypt_times': [],
             'query_times': [],
             'decrypt_times': [],
@@ -370,6 +376,10 @@ class CCS23ExperimentWrapper:
         if metrics['query_times']:
             metrics['avg_query_time'] = np.mean(metrics['query_times'])
             metrics['std_query_time'] = np.std(metrics['query_times'])
+
+        if metrics['check_times']:
+            metrics['avg_check_time'] = np.mean(metrics['check_times'])
+            metrics['std_check_time'] = np.std(metrics['check_times'])
         
         if metrics['decrypt_times']:
             metrics['avg_decrypt_time'] = np.mean(metrics['decrypt_times'])

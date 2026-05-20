@@ -54,8 +54,8 @@ def save_fig(prefix: str) -> Path:
     """只保留一张图：固定文件名并覆盖旧图。"""
     return single_output_path(PIC_DIR, prefix, 'png')
 
-SCHEME_LABELS = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
-SCHEME_COLORS = ['#2196F3', '#FF9800', '#4CAF50', '#9C27B0', '#F44336']
+SCHEME_LABELS = ['DeCart', 'DeCart*', 'Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
+SCHEME_COLORS = ['#2196F3', '#FF9800', '#4CAF50', '#9C27B0', '#F44336', '#795548']
 MODEL_LABELS = ['Dot Product', 'Decision Tree', 'Neural Network']
 MODEL_KEYS  = ['dot', 'decision_tree', 'neural_network']
 SIZE_VALUES = [32, 64, 128]
@@ -63,9 +63,10 @@ SIZE_VALUES = [32, 64, 128]
 RESULT_DIRS = {
     'DeCart': 'our_decart',
     'DeCart*': 'our_decart_star',
-    'CCS23': 'scheme1_ccs23',
+    'Naive CCS-2023': 'naive_ccs23',
     'Server': 'scheme2_server',
     'Offline': 'scheme3_offline',
+    'SecPQ': 'secpq',
 }
 
 def load_all_schemes():
@@ -73,9 +74,10 @@ def load_all_schemes():
     paths = {
         'DeCart':  sorted(glob.glob(os.path.join(project_root, 'experiments/results/our_decart/*.json')))[-1],
         'DeCart*': sorted(glob.glob(os.path.join(project_root, 'experiments/results/our_decart_star/*.json')))[-1],
-        'CCS23':   sorted(glob.glob(os.path.join(project_root, 'experiments/results/scheme1_ccs23/*.json')))[-1],
+        'Naive CCS-2023': sorted(glob.glob(os.path.join(project_root, 'experiments/results/naive_ccs23/*.json')))[-1],
         'Server':  sorted(glob.glob(os.path.join(project_root, 'experiments/results/scheme2_server/*.json')))[-1],
         'Offline': sorted(glob.glob(os.path.join(project_root, 'experiments/results/scheme3_offline/*.json')))[-1],
+        'SecPQ': sorted(glob.glob(os.path.join(project_root, 'experiments/results/secpq/*.json')))[-1],
     }
     data = {}
     for scheme, p in paths.items():
@@ -264,11 +266,11 @@ def plot_communication_5schemes():
 
             x = np.arange(len(schemes))
             vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in schemes]
-            ccs23_val = comm_by_size[size]['CCS23']['phase_kb'][phase_key]
-            other_vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in schemes if scheme != 'CCS23']
+            baseline_val = comm_by_size[size]['Naive CCS-2023']['phase_kb'][phase_key]
+            other_vals = [comm_by_size[size][scheme]['phase_kb'][phase_key] for scheme in schemes if scheme != 'Naive CCS-2023']
 
-            lower_min = max(0.0, np.floor((ccs23_val - 1.0) / 2.0) * 2.0)
-            lower_max = np.ceil((ccs23_val + 1.0) / 2.0) * 2.0
+            lower_min = max(0.0, np.floor((baseline_val - 1.0) / 2.0) * 2.0)
+            lower_max = np.ceil((baseline_val + 1.0) / 2.0) * 2.0
 
             other_min = min(other_vals)
             other_max = max(other_vals)
@@ -327,39 +329,39 @@ def plot_communication_5schemes():
             fontsize=9,
         )
     fig.subplots_adjust(left=0.07, right=0.98, bottom=0.10, top=0.88, wspace=0.22, hspace=0.06)
-    out = save_fig('communication_5schemes_sizes32_64_128')
+    out = save_fig('communication_6schemes_sizes32_64_128')
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"  ✓ 图1保存: {out.name}")
 
 
 # ─────────────────────────────────────────────────────────────
-# 图2: 总耗时堆叠图（归一化到 CCS23=1，Encrypt+Query+Decrypt）
+# 图2: 总耗时堆叠图（归一化到 Naive CCS-2023=1，Encrypt+Query+Decrypt）
 # ─────────────────────────────────────────────────────────────
 def plot_stacked_total_time():
 
     data = load_all_schemes()
     schemes = SCHEME_LABELS
-    colors_enc  = ['#1565C0', '#E65100', '#1B5E20', '#4A148C', '#B71C1C']
-    colors_qry  = ['#42A5F5', '#FFA726', '#66BB6A', '#AB47BC', '#EF5350']
-    colors_dec  = ['#90CAF9', '#FFCC80', '#A5D6A7', '#CE93D8', '#EF9A9A']
+    colors_enc  = ['#1565C0', '#E65100', '#1B5E20', '#4A148C', '#B71C1C', '#4E342E']
+    colors_qry  = ['#42A5F5', '#FFA726', '#66BB6A', '#AB47BC', '#EF5350', '#8D6E63']
+    colors_dec  = ['#90CAF9', '#FFCC80', '#A5D6A7', '#CE93D8', '#EF9A9A', '#BCAAA4']
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 6), sharey=False)
-    fig.suptitle('End-to-End Latency Breakdown\n(Normalized to CCS23 = 1, higher = slower)', fontsize=13, fontweight='bold')
+    fig.suptitle('End-to-End Latency Breakdown\n(Normalized to Naive CCS-2023 = 1, higher = slower)', fontsize=13, fontweight='bold')
 
     for ax_idx, (model_key, model_label) in enumerate(zip(MODEL_KEYS, MODEL_LABELS)):
         ax = axes[ax_idx]
         x = np.arange(len(schemes))
         width = 0.55
 
-        # 以 CCS23 总时间为基准做归一化
-        ccs23_total = (get_mean(data, 'CCS23', model_key, 'encrypt_times') +
-                       get_mean(data, 'CCS23', model_key, 'query_times') +
-                       get_mean(data, 'CCS23', model_key, 'decrypt_times'))
+        # 以 Naive CCS-2023 总时间为基准做归一化
+        baseline_total = (get_mean(data, 'Naive CCS-2023', model_key, 'encrypt_times') +
+                  get_mean(data, 'Naive CCS-2023', model_key, 'query_times') +
+                  get_mean(data, 'Naive CCS-2023', model_key, 'decrypt_times'))
 
-        enc_vals = [get_mean(data, s, model_key, 'encrypt_times') / ccs23_total for s in schemes]
-        qry_vals = [get_mean(data, s, model_key, 'query_times')   / ccs23_total for s in schemes]
-        dec_vals = [get_mean(data, s, model_key, 'decrypt_times') / ccs23_total for s in schemes]
+        enc_vals = [get_mean(data, s, model_key, 'encrypt_times') / baseline_total for s in schemes]
+        qry_vals = [get_mean(data, s, model_key, 'query_times')   / baseline_total for s in schemes]
+        dec_vals = [get_mean(data, s, model_key, 'decrypt_times') / baseline_total for s in schemes]
 
         ax.bar(x, enc_vals, width,
                color=[colors_enc[i] for i in range(len(schemes))], alpha=0.9)
@@ -374,13 +376,13 @@ def plot_stacked_total_time():
             total = e + q + d
             ax.text(xi, total * 1.05, f'{total:.0f}×', ha='center', va='bottom', fontsize=8, fontweight='bold')
 
-        # CCS23=1 基准线
-        ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='CCS23 baseline')
+        # Naive CCS-2023=1 基准线
+        ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='Naive CCS-2023 baseline')
 
         ax.set_title(model_label, fontsize=12)
         ax.set_xticks(x)
         ax.set_xticklabels(schemes, fontsize=9, rotation=15)
-        ax.set_ylabel('Normalized Latency (× CCS23)', fontsize=10)
+        ax.set_ylabel('Normalized Latency (× Naive CCS-2023)', fontsize=10)
         ax.grid(axis='y', alpha=0.4)
 
         if ax_idx == 0:
@@ -388,7 +390,7 @@ def plot_stacked_total_time():
             qry_patch = mpatches.Patch(color='#888888', label='Query (mid)')
             dec_patch = mpatches.Patch(color='#AAAAAA', label='Decrypt (light)')
             ax.legend(handles=[enc_patch, qry_patch, dec_patch,
-                                plt.Line2D([0],[0], color='black', linestyle='--', label='CCS23=1')],
+                                plt.Line2D([0],[0], color='black', linestyle='--', label='Naive CCS-2023=1')],
                       fontsize=8)
 
     plt.tight_layout()
@@ -399,7 +401,7 @@ def plot_stacked_total_time():
 
 
 # ─────────────────────────────────────────────────────────────
-# 图3: 通信量5方案柱状图（归一化到 CCS23=1）
+# 图3: 通信量多方案柱状图（归一化到 Naive CCS-2023=1）
 # ─────────────────────────────────────────────────────────────
 def plot_communication_bar():
     data = load_all_schemes()
@@ -408,7 +410,7 @@ def plot_communication_bar():
 
     fig = plt.figure(figsize=(16, 8))
     gs = fig.add_gridspec(2, 3, height_ratios=[4.0, 1.0], hspace=0.06, wspace=0.22)
-    fig.suptitle('Communication Cost Comparison\n(Normalized to CCS23 = 1, broken axis ignores non-informative middle range)',
+    fig.suptitle('Communication Cost Comparison\n(Normalized to Naive CCS-2023 = 1, broken axis ignores non-informative middle range)',
                  fontsize=13, fontweight='bold')
 
     def total_comm_mean(scheme_name, scheme_data, model_key):
@@ -449,12 +451,12 @@ def plot_communication_bar():
         top_ax = fig.add_subplot(gs[0, col])
         bottom_ax = fig.add_subplot(gs[1, col], sharex=top_ax)
 
-        # CCS23 基准通信量
-        ccs23_comm = max(total_comm_mean('CCS23', data['CCS23'], model_key), 1e-12)
-        norm_vals = [max(total_comm_mean(s, data[s], model_key) / ccs23_comm, 0.0) for s in schemes]
+        # Naive CCS-2023 基准通信量
+        baseline_comm = max(total_comm_mean('Naive CCS-2023', data['Naive CCS-2023'], model_key), 1e-12)
+        norm_vals = [max(total_comm_mean(s, data[s], model_key) / baseline_comm, 0.0) for s in schemes]
         x = np.arange(len(schemes))
 
-        other_vals = [v for s, v in zip(schemes, norm_vals) if s != 'CCS23']
+        other_vals = [v for s, v in zip(schemes, norm_vals) if s != 'Naive CCS-2023']
         lower_min = 0.0
         lower_max = max(2.0, 1.6)
 
@@ -468,7 +470,7 @@ def plot_communication_bar():
         bottom_ax.set_ylim(lower_min, lower_max)
         bottom_ax.set_yticks([0.0, 1.0, lower_max])
 
-        top_ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='CCS23 baseline')
+        top_ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='Naive CCS-2023 baseline')
         bottom_ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2)
 
         # 标注倍数
@@ -476,7 +478,7 @@ def plot_communication_bar():
             xpos = bar.get_x() + bar.get_width() / 2
             label = format_ratio_label(val)
 
-            if scheme_name == 'CCS23':
+            if scheme_name == 'Naive CCS-2023':
                 bottom_ax.text(xpos, max(val * 1.04, 1.05), label,
                                ha='center', va='bottom', fontsize=10, fontweight='bold')
             else:
@@ -484,7 +486,7 @@ def plot_communication_bar():
                             ha='center', va='bottom', fontsize=10, fontweight='bold')
 
         top_ax.set_title(model_label, fontsize=12)
-        top_ax.set_ylabel('Normalized Comm. (× CCS23)', fontsize=10)
+        top_ax.set_ylabel('Normalized Comm. (× Naive CCS-2023)', fontsize=10)
         top_ax.grid(axis='y', alpha=0.35)
         bottom_ax.grid(axis='y', alpha=0.12)
 
@@ -504,7 +506,7 @@ def plot_communication_bar():
 
 
 # ─────────────────────────────────────────────────────────────
-# 图4: 吞吐量对比图（归一化到 CCS23=1）
+# 图4: 吞吐量对比图（归一化到 Naive CCS-2023=1）
 # ─────────────────────────────────────────────────────────────
 def plot_throughput():
     data = load_all_schemes()
@@ -512,7 +514,7 @@ def plot_throughput():
     colors  = SCHEME_COLORS
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle('System Throughput Comparison\n(Normalized to CCS23 = 1, lower = less throughput)',
+    fig.suptitle('System Throughput Comparison\n(Normalized to Naive CCS-2023 = 1, lower = less throughput)',
                  fontsize=13, fontweight='bold')
 
     for ax, model_key, model_label in zip(axes, MODEL_KEYS, MODEL_LABELS):
@@ -522,11 +524,11 @@ def plot_throughput():
                        get_mean(data, scheme, model_key, 'decrypt_times'))
             return 1.0 / total_t if total_t > 0 else 0
 
-        ccs23_tp = throughput('CCS23')
-        norm_vals = [throughput(s) / ccs23_tp for s in schemes]
+        baseline_tp = throughput('Naive CCS-2023')
+        norm_vals = [throughput(s) / baseline_tp for s in schemes]
 
         bars = ax.bar(schemes, norm_vals, color=colors, alpha=0.85, edgecolor='white')
-        ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='CCS23 baseline')
+        ax.axhline(y=1, color='black', linestyle='--', linewidth=1.2, label='Naive CCS-2023 baseline')
 
         for bar, val in zip(bars, norm_vals):
             label = f'{val:.3f}×' if val < 0.1 else f'{val:.2f}×'
@@ -535,7 +537,7 @@ def plot_throughput():
                     label, ha='center', va='bottom', fontsize=8, fontweight='bold')
 
         ax.set_title(model_label, fontsize=12)
-        ax.set_ylabel('Normalized Throughput (× CCS23)', fontsize=10)
+        ax.set_ylabel('Normalized Throughput (× Naive CCS-2023)', fontsize=10)
         ax.set_yscale('log')
         ax.grid(axis='y', alpha=0.4)
         ax.tick_params(axis='x', rotation=15)
@@ -627,7 +629,7 @@ def plot_speedup_heatmap():
     data = load_all_schemes()
     metrics   = ['encrypt_times', 'query_times', 'decrypt_times']
     m_labels  = ['Encrypt', 'Query', 'Decrypt']
-    baselines = ['Server', 'Offline']
+    baselines = ['Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
 
     def format_ratio(val: float) -> str:
         """避免把极小非零值误显示为 0.0x。"""
@@ -641,8 +643,8 @@ def plot_speedup_heatmap():
             return f'{val:.2f}x'
         return f'{val:.1f}x'
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-    fig.suptitle('Speedup Ratio Heatmap (Baseline / Our Scheme, CCS23 Removed)', fontsize=13, fontweight='bold')
+    fig, axes = plt.subplots(2, 4, figsize=(20, 9))
+    fig.suptitle('Speedup Ratio Heatmap (Baseline / Our Scheme)', fontsize=13, fontweight='bold')
 
     for row_idx, our_scheme in enumerate(['DeCart', 'DeCart*']):
         for col_idx, baseline in enumerate(baselines):
@@ -705,7 +707,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     jobs = [
-        ('comm', '通信开销 5方案对比图', plot_communication_5schemes),
+        ('comm', '通信开销 6方案对比图', plot_communication_5schemes),
         ('stacked', '总耗时堆叠图', plot_stacked_total_time),
         ('bar', '通信量柱状图', plot_communication_bar),
         ('throughput', '吞吐量对比图', plot_throughput),

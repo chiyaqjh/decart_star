@@ -27,13 +27,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_ROOT = PROJECT_ROOT / 'experiments' / 'results'
 PIC_DIR = get_pic_accuracy_dir(PROJECT_ROOT)
 
-SCHEMES = ['DeCart', 'DeCart*', 'CCS23', 'Server', 'Offline']
+SCHEMES = ['DeCart', 'DeCart*', 'Naive CCS-2023', 'Server', 'Offline', 'SecPQ']
 FOLDERS = {
     'DeCart': 'our_decart',
     'DeCart*': 'our_decart_star',
-    'CCS23': 'scheme1_ccs23',
+    'Naive CCS-2023': 'naive_ccs23',
     'Server': 'scheme2_server',
     'Offline': 'scheme3_offline',
+    'SecPQ': 'secpq',
 }
 MODELS = [('dot', 'Dot Product'), ('decision_tree', 'Decision Tree'), ('neural_network', 'Neural Network')]
 
@@ -75,9 +76,10 @@ def plot_latency_boxplots(data):
     scheme_style = {
         'DeCart': {'edgecolor': '#3A5A98', 'hatch': '/////'},
         'DeCart*': {'edgecolor': '#5FA8A3', 'hatch': '.....'},
-        'CCS23': {'edgecolor': '#111111', 'hatch': '////'},
+        'Naive CCS-2023': {'edgecolor': '#111111', 'hatch': '////'},
         'Server': {'edgecolor': '#E07A5F', 'hatch': 'xxxxx'},
         'Offline': {'edgecolor': '#6C757D', 'hatch': '++++'},
+        'SecPQ': {'edgecolor': '#8C564B', 'hatch': '////+'},
     }
 
     for col, (mk, mlabel) in enumerate(MODELS):
@@ -90,9 +92,9 @@ def plot_latency_boxplots(data):
             box.set_facecolor('none')
             box.set_edgecolor(style['edgecolor'])
             box.set_hatch(style['hatch'])
-            box.set_linewidth(2.0 if SCHEMES[i] == 'CCS23' else 1.4)
+            box.set_linewidth(2.0 if SCHEMES[i] == 'Naive CCS-2023' else 1.4)
             q_bp['medians'][i].set_color(style['edgecolor'])
-            q_bp['medians'][i].set_linewidth(1.8 if SCHEMES[i] == 'CCS23' else 1.4)
+            q_bp['medians'][i].set_linewidth(1.8 if SCHEMES[i] == 'Naive CCS-2023' else 1.4)
         axq.set_title(f'{mlabel} - Query')
         axq.tick_params(axis='x', rotation=15)
         axq.tick_params(axis='y', labelsize=10)
@@ -107,9 +109,9 @@ def plot_latency_boxplots(data):
             box.set_facecolor('none')
             box.set_edgecolor(style['edgecolor'])
             box.set_hatch(style['hatch'])
-            box.set_linewidth(2.0 if SCHEMES[i] == 'CCS23' else 1.4)
+            box.set_linewidth(2.0 if SCHEMES[i] == 'Naive CCS-2023' else 1.4)
             d_bp['medians'][i].set_color(style['edgecolor'])
-            d_bp['medians'][i].set_linewidth(1.8 if SCHEMES[i] == 'CCS23' else 1.4)
+            d_bp['medians'][i].set_linewidth(1.8 if SCHEMES[i] == 'Naive CCS-2023' else 1.4)
         axd.set_title(f'{mlabel} - Decrypt')
         axd.tick_params(axis='x', rotation=15)
         axd.tick_params(axis='y', labelsize=10)

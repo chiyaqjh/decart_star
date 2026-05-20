@@ -3,7 +3,7 @@
 线下密钥分发方案实验包装器
 作为访问控制效率上限基准：
 - 密钥通过安全信道线下分发
-- Check算法开销为0
+- Check算法为线下授权表查询
 - 数据和模型用用户密钥加密
 """
 
@@ -172,24 +172,21 @@ class OfflineSchemeExperimentWrapper:
     def setup_authorization(self, owner_id: int, querier_id: int):
         """
         建立授权关系（线下完成）
-        相当于论文中的信任建立，但Check开销为0
+        相当于论文中的信任建立
         """
         self.authorizations[(owner_id, querier_id)] = True
         print(f"    建立授权: 用户 {querier_id} 可访问 所有者 {owner_id} 的数据")
     
     def check_authorization(self, owner_id: int, querier_id: int) -> bool:
         """
-        检查授权（线下已完成，开销为0）
+        检查授权（线下已完成，通过本地授权表查询）
         
         返回:
             True: 有权限
         """
-        # 模拟线下Check，实际开销为0
+        check_start = time.perf_counter()
         result = self.authorizations.get((owner_id, querier_id), False)
-        
-        # 记录Check时间（应该接近0）
-        check_time = 0.000001  # 1微秒模拟
-        self.metrics['check_times'].append(check_time)
+        self.metrics['check_times'].append(time.perf_counter() - check_start)
         
         return result
     
