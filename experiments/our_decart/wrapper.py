@@ -278,65 +278,38 @@ class DeCartExperimentWrapper:
         check_start = time.perf_counter()
         C_M = querier.check_access(C_m)
         self.metrics['check_times'].append(time.perf_counter() - check_start)
+        check_req_payload = {
+            'querier_id': querier_id,
+            'owner_id': owner_id,
+            'dataset_id': C_m.get('dataset_id') if isinstance(C_m, dict) else dataset_id,
+        }
+        check_req_size = self._safe_obj_size(check_req_payload, fallback=32)
+        check_res_size = self._safe_obj_size(C_M) if C_M is not None else 0
+        self.metrics['communication_sizes'].append({
+            'type': 'check',
+            'size': check_req_size + check_res_size,
+            'request_size': check_req_size,
+            'response_size': check_res_size,
+            'records': 0
+        })
         if C_M is None:
             return None
         
         # 根据模型类型处理
-        if isinstance(model, list):
-            # 点积模型 - 直接加密列表
-            print(f"    点积模型加密...")
+        if isinstance(model, list) or (isinstance(model, dict) and model.get('type') == 'neural_network'):
+            model_encrypt_start = time.perf_counter()
+            if isinstance(model, list):
+                print(f"    点积模型加密...")
+            else:
+                print(f"    神经网络模型加密...")
             C_M = querier.encrypt_ai_model(model, C_M)
+            self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
 
-        elif isinstance(model, dict) and model.get('type') == 'neural_network':
-            # 神经网络模型 - 直接构建加密模型，不调用 encrypt_ai_model
-            print(f"    神经网络模型加密...")
-            
-            weights = model.get('weights', [])
-            bias = model.get('bias', [])
-            input_dim = model.get('input_dim', 64)
-            output_dim = model.get('output_dim', 10)
-            
-            # 加密权重
-            encrypted_weights = []
-            for w in weights:
-                try:
-                    encrypted_w = self.curator.system.he.encrypt([float(w)])
-                    encrypted_weights.append(encrypted_w)
-                except Exception as e:
-                    print(f"     权重加密失败: {e}")
-                    encrypted_weights.append(None)
-            
-            # 加密偏置
-            encrypted_bias = []
-            for b in bias:
-                try:
-                    encrypted_b = self.curator.system.he.encrypt([float(b)])
-                    encrypted_bias.append(encrypted_b)
-                except Exception as e:
-                    print(f"     偏置加密失败: {e}")
-                    encrypted_bias.append(None)
-            
-            encrypted_model = {
-                'type': 'neural_network',
-                'layer_count': 1,
-                'layers': [{
-                    'layer_idx': 0,
-                    'layer_type': 'linear',
-                    'activation': 'linear',
-                    'weights_shape': (output_dim, input_dim),
-                    'bias_shape': (output_dim,),
-                    'encrypted_weights': encrypted_weights,
-                    'encrypted_bias': encrypted_bias
-                }]
-            }
-            C_M['encrypted_model'] = encrypted_model
-            C_M['model_type'] = 'neural_network'
-            
-            
         elif isinstance(model, dict) and model.get('type') == 'decision_tree':
             # 决策树模型 - 使用系统方法加密
             print(f"    决策树模型加密...")
             pk_h = self.curator.system.he.public_key
+            model_encrypt_start = time.perf_counter()
             
             if hasattr(self.curator.system, 'encrypt_decision_tree'):
                 encrypted_model = self.curator.system.encrypt_decision_tree(model, pk_h)
@@ -348,6 +321,8 @@ class DeCartExperimentWrapper:
                     'nodes': model.get('nodes', [])
                 }
             C_M['encrypted_model'] = encrypted_model
+            C_M['model_type'] = 'decision_tree'
+            self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
             
         else:
             print(f"   ❌ 不支持的模型类型: {type(model)}")

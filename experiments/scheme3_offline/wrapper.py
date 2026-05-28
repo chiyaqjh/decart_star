@@ -316,7 +316,13 @@ class OfflineSchemeExperimentWrapper:
             return None
         
         # 检查授权（线下完成，开销为0）
-        if not self.check_authorization(owner_id, querier_id):
+        is_authorized = self.check_authorization(owner_id, querier_id)
+        self.metrics['communication_sizes'].append({
+            'type': 'check',
+            'size': 0,
+            'records': 0,
+        })
+        if not is_authorized:
             print(f"      未授权访问")
             return None
         

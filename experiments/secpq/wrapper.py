@@ -135,6 +135,17 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
         ticket_map = self.dataset_access_tickets.get((owner_id, dataset_id), {})
         access_ticket = ticket_map.get(querier_id)
         self.metrics['check_times'].append(time.perf_counter() - check_start)
+        check_req_payload = {
+            'querier_id': querier_id,
+            'owner_id': owner_id,
+            'dataset_id': dataset_id,
+        }
+        self.metrics['communication_sizes'].append({
+            'type': 'check',
+            'size': self._safe_obj_size(check_req_payload, fallback=32)
+            + (self._safe_obj_size(access_ticket, fallback=len(access_ticket)) if access_ticket is not None else 0),
+            'records': 0,
+        })
 
         if access_ticket is None:
             print("     SecPQ 授权检查失败")

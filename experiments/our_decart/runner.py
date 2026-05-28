@@ -1,8 +1,5 @@
 # decart/experiments/our_decart/runner.py
-"""
-DeCart 方案实验运行器
-执行完整的对比实验，支持多模型测试
-"""
+"""DeCart experiment runner."""
 
 import sys
 import os
@@ -14,37 +11,37 @@ from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-# 添加项目根目录到路径
+# 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(os.path.dirname(current_dir))  # 回到 decart 目录
+project_root = os.path.dirname(os.path.dirname(current_dir))  #  decart 
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 直接导入 wrapper，不通过 __init__
+#  wrapper __init__
 from config import Config
 from experiments.our_decart.wrapper import DeCartExperimentWrapper
 
 
 @dataclass
 class ExperimentConfig:
-    """实验配置"""
-    # 系统参数
-    N: int = Config.MAX_USERS  # 最大用户数
-    n: int = Config.BLOCK_SIZE  # 每块用户数
+    """Configuration for a DeCart experiment run."""
+    # 
+    N: int = Config.MAX_USERS  # 
+    n: int = Config.BLOCK_SIZE  # ?
     
-    # 数据参数
-    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # 数据记录数
-    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 记录维度
+    # 
+    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # ?
+    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 
     
-    # 模型参数
-    model_types: List[str] = None  # 要测试的模型类型
+    # 
+    model_types: List[str] = None  # 
     
-    # 策略参数
-    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # 访问策略中的用户数
+    # 
+    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # ?
     num_queriers: int = 1
     
-    # 实验参数
-    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 重复运行次数
+    # 
+    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 
     save_results: bool = True
     results_dir: str = "experiments/results/our_decart"
     
@@ -52,21 +49,21 @@ class ExperimentConfig:
         if self.model_types is None:
             self.model_types = ['dot', 'decision_tree', 'neural_network']
         if self.num_queriers < 1:
-            raise ValueError('num_queriers 必须至少为 1')
+            raise ValueError('num_queriers ?1')
 
 
 class ExperimentRunner:
-    """DeCart 实验运行器（支持多模型）"""
+    """DeCart ()"""
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self.results = {
             'config': asdict(config),
-            'models': {},  # 按模型类型存储结果
+            'models': {},  # ?
             'summary': {}
         }
         
-        # 为每种模型类型创建结果容器
+        # ?
         for model_type in config.model_types:
             self.results['models'][model_type] = {
                 'setup_times': [],
@@ -78,6 +75,9 @@ class ExperimentRunner:
                 'decrypt_times': [],
                 'communication_sizes': [],
                 'comm_upload_sizes': [],
+                'comm_check_sizes': [],
+                'comm_check_request_sizes': [],
+                'comm_check_response_sizes': [],
                 'comm_query_sizes': [],
                 'comm_decrypt_sizes': [],
                 'setup_crs_sizes': [],
@@ -95,16 +95,16 @@ class ExperimentRunner:
                 'runs': []
             }
         
-        # 创建结果目录
+        # 
         if config.save_results:
             os.makedirs(config.results_dir, exist_ok=True)
     
     def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
-        """生成测试数据"""
+        """Generate normalized random records and an empty policy placeholder."""
         data = []
         for _ in range(self.config.num_records):
             record = np.random.randn(self.config.record_dim).tolist()
-            # 归一化到 [-1, 1] 范围内
+            #  [-1, 1] ?
             max_val = max(abs(min(record)), abs(max(record)))
             if max_val > 0:
                 record = [x / max_val for x in record]
@@ -113,25 +113,25 @@ class ExperimentRunner:
         return data, []
     
     def generate_model(self, model_type: str) -> Any:
-        """根据模型类型生成模型 - 统一格式确保可加密"""
+        """Generate a synthetic model for the requested model type."""
         
         if model_type == 'dot':
-            # 点积模型 - 返回列表，可以直接加密
-            print(f"   生成点积模型...")
+            #  - ?
+            print(f"   ...")
             model = np.random.randn(self.config.record_dim).tolist()
-            # 归一化
+            # ?
             max_val = max(abs(min(model)), abs(max(model))) or 1
             model = [x / max_val for x in model]
             return model
         
         elif model_type == 'decision_tree':
-            # 决策树模型 - 返回可加密的字典格式
-            print(f"   生成决策树模型...")
+            # ?- 
+            print(f"   Generating decision tree model...")
             try:
                 from schemes.ai_model import DecisionTreeHE, DecisionTreeNode
                 tree = DecisionTreeHE()
                 
-                # 创建简单决策树
+                # 
                 root = DecisionTreeNode(0)
                 root.feature_idx = 0
                 root.threshold = 0.5
@@ -148,11 +148,11 @@ class ExperimentRunner:
                 tree.add_node(right)
                 tree.set_root(0)
                 
-                print(f"     决策树节点数: {len(tree.nodes)}")
+                print(f"     Decision tree nodes: {len(tree.nodes)}")
                 return tree
             except ImportError as e:
-                print(f"     导入失败: {e}，使用字典格式")
-                # 备用方案：返回字典格式
+                print(f"     Falling back to dict decision tree format: {e}")
+                # ?
                 return {
                     'type': 'decision_tree',
                     'format': 'dict',
@@ -165,21 +165,21 @@ class ExperimentRunner:
                 }
         
         elif model_type == 'neural_network':
-            # 神经网络模型 - 返回可加密的字典格式
-            print(f"   生成神经网络模型...")
+            #  - 
+            print(f"   ...")
             
-            # 生成随机权重和偏置
+            # ?
             output_dim = 10
             input_dim = self.config.record_dim
             
-            # 生成权重矩阵 (output_dim x input_dim)
+            #  (output_dim x input_dim)
             weights_matrix = np.random.randn(output_dim, input_dim) * 0.1
             bias = np.random.randn(output_dim) * 0.1
             
-            # 展平权重
+            # 
             weights = weights_matrix.flatten().tolist()
             
-            # 返回统一格式
+            # 
             return {
                 'type': 'neural_network',
                 'format': 'single_layer',
@@ -192,71 +192,73 @@ class ExperimentRunner:
             }
         
         else:
-            raise ValueError(f"未知模型类型: {model_type}")
+            raise ValueError(f"Unsupported model type: {model_type}")
     
     def register_all_users(self, wrapper: DeCartExperimentWrapper, policy: List[int]):
-        """注册所有需要的用户"""
-        print(f"\n📝 注册策略中的用户...")
+        """Register every user in the supplied policy."""
+        print(f"\nRegistering policy users...")
         for uid in policy:
             try:
                 wrapper.register_user(uid)
-                print(f"   用户 {uid} 注册成功")
+                print(f"    Registered user {uid}")
             except Exception as e:
-                print(f"   用户 {uid} 注册失败: {e}")
+                print(f"    Failed to register user {uid}: {e}")
     
     def run_single_experiment(self, run_id: int, model_type: str) -> Optional[Dict]:
-        """运行单次实验（指定模型类型）"""
         print(f"\n{'='*60}")
-        print(f"🔬 运行实验 {run_id+1}/{self.config.num_runs} - 模型: {model_type}")
+        print(f"Run {run_id + 1}/{self.config.num_runs} - model: {model_type}")
         print(f"{'='*60}")
         
         try:
-            # 初始化实验环境
+            # ?
             wrapper = DeCartExperimentWrapper(N=self.config.N, n=self.config.n)
             setup_time = wrapper.setup()
             setup_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             wrapper.reset_metrics()
             
-            # 定义用户ID
+            # ID
             owner_id = 5
             active_querier_id = owner_id + 1
             if active_querier_id >= self.config.N:
-                raise ValueError(f"当前 N={self.config.N} 无法分配查询用户")
+                raise ValueError(f" N={self.config.N} ")
             query_repetitions = self.config.num_queriers
             
-            # 生成访问策略
+            # 
             policy = list(range(min(self.config.policy_size, self.config.N - 2)))
             policy.append(owner_id)
             policy.append(active_querier_id)
-            policy = list(set(policy))  # 去重
+            policy = list(set(policy))  # 
             
-            # 注册所有用户
+            # ?
             self.register_all_users(wrapper, policy)
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             
-            # 建立信任关系
+            # 
             wrapper.curator.add_trust(active_querier_id, owner_id)
             
-            # 生成测试数据
+            # 
             data, _ = self.generate_test_data()
             
-            # 生成模型
+            # 
             model = self.generate_model(model_type)
             
-            # 加密数据集
-            print(f"\n📦 加密数据集...")
+            # ?
+            print(f"\nEncrypting dataset...")
             C_m, sk_h_s, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
             
-            # 存储数据集
+            # ?
             wrapper.store_dataset(owner_id, ds_id, C_m, sk_h_s)
             
-            # 根据不同模型类型执行查询
+            # 
             total_results = 0
+            check_request_size_total = 0
+            check_response_size_total = 0
             if model_type == 'dot':
-                # 点积模型
-                print(f"\n🔍 执行点积查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+                # 
+                print(f"\nExecuting dot-product queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
-                for _ in range(query_repetitions):
+                for repetition_idx in range(query_repetitions):
+                    print(f"   Dot-product query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
                     current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
                     if current_results is not None:
                         results = current_results
@@ -266,10 +268,11 @@ class ExperimentRunner:
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'neural_network':
-                # 神经网络模型
-                print(f"\n🧠 执行神经网络查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+                # 
+                print(f"\nExecuting neural-network queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
-                for _ in range(query_repetitions):
+                for repetition_idx in range(query_repetitions):
+                    print(f"   Neural-network query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
                     current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
                     if current_results is not None:
                         results = current_results
@@ -279,24 +282,24 @@ class ExperimentRunner:
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'decision_tree':
-                # 决策树特殊处理
-                print(f"\n🌲 执行决策树查询...")
+                # ?
+                print(f"\nPreparing encrypted decision-tree query...")
                 
-                # 获取公钥
+                # 
                 pk_h = wrapper.curator.system.he.public_key
                 encrypt_model_start = time.perf_counter()
                 
-                # 加密决策树
+                # ?
                 if hasattr(wrapper.curator.system, 'encrypt_decision_tree'):
-                    print(f"   使用系统方法加密决策树...")
+                    print(f"   Encrypting decision-tree model...")
                     encrypted_model = wrapper.curator.system.encrypt_decision_tree(model, pk_h)
                 else:
-                    # 简化的加密
-                    print(f"   使用简化方法加密决策树...")
-                    # 获取决策树参数
+                    # 
+                    print(f"   ...")
+                    # ?
                     if hasattr(model, 'get_encryptable_params'):
                         params = model.get_encryptable_params()
-                        # 加密内部节点
+                        # 
                         encrypted_internal = []
                         for node in params.get('internal_nodes', []):
                             encrypted_node = {
@@ -308,7 +311,7 @@ class ExperimentRunner:
                             }
                             encrypted_internal.append(encrypted_node)
                         
-                        # 加密叶子节点
+                        # 
                         encrypted_leaves = []
                         for node in params.get('leaf_nodes', []):
                             encrypted_node = {
@@ -324,28 +327,42 @@ class ExperimentRunner:
                             'root_id': params.get('root_id', 0),
                             'node_count': params.get('node_count', 0)
                         }
-                        print(f"     加密完成: {len(encrypted_internal)}内部节点, {len(encrypted_leaves)}叶子节点")
+                        print(f"     Encrypted internal nodes: {len(encrypted_internal)}, leaves: {len(encrypted_leaves)}")
                     else:
-                        # 使用字典格式
+                        # 
                         encrypted_model = {
                             'type': 'decision_tree',
                             'encrypted': True,
                             'nodes': model.get('nodes', []) if isinstance(model, dict) else []
                         }
-                        print(f"     使用字典格式")
+                        print(f"     Using fallback encrypted decision-tree structure")
                 wrapper.metrics['encrypt_times'].append(time.perf_counter() - encrypt_model_start)
                 
                 query_times = []
                 decrypt_times = []
                 results = None
-                for _ in range(query_repetitions):
+                for repetition_idx in range(query_repetitions):
                     querier = wrapper.create_querier(active_querier_id)
                     check_start = time.perf_counter()
                     C_M = querier.check_access(C_m)
                     wrapper.metrics['check_times'].append(time.perf_counter() - check_start)
+                    check_req_payload = {
+                        'querier_id': active_querier_id,
+                        'owner_id': owner_id,
+                        'dataset_id': C_m.get('dataset_id') if isinstance(C_m, dict) else None,
+                    }
+                    check_req_size = wrapper._safe_obj_size(check_req_payload, fallback=32)
+                    check_res_size = wrapper._safe_obj_size(C_M) if C_M is not None else 0
+                    wrapper.metrics['communication_sizes'].append({
+                        'type': 'check',
+                        'size': check_req_size + check_res_size,
+                        'request_size': check_req_size,
+                        'response_size': check_res_size,
+                        'records': 0
+                    })
 
                     if C_M is None:
-                        print(f"      决策树访问检查失败，querier={active_querier_id}")
+                        print(f"      Access denied for querier={active_querier_id}")
                         return None
 
                     C_M['encrypted_model'] = encrypted_model
@@ -369,12 +386,12 @@ class ExperimentRunner:
                     if 'sk_h_u' not in C_M:
                         C_M['sk_h_u'] = b'demo_secret_key'
 
-                    print(f"   执行加密决策树查询... querier={active_querier_id}")
+                    print(f"   Executing decision-tree query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
                     start_query = time.perf_counter()
                     ER = wrapper.curator.system.query(C_M, C_m, sk_h_s)
                     single_query_time = time.perf_counter() - start_query
                     query_times.append(single_query_time)
-                    print(f"   查询时间: {single_query_time*1000:.2f} ms")
+                    print(f"   Query time: {single_query_time*1000:.2f} ms")
 
                     if ER is not None:
                         res_size = wrapper._safe_obj_size(ER)
@@ -391,28 +408,32 @@ class ExperimentRunner:
                         if current_results is not None:
                             results = current_results
                             total_results += len(current_results)
-                        print(f"   解密时间: {single_decrypt_time*1000:.2f} ms")
-                        print(f"   结果数量: {len(current_results) if current_results else 0}")
+                        print(f"   : {single_decrypt_time*1000:.2f} ms")
+                        print(f"   : {len(current_results) if current_results else 0}")
                         if current_results:
-                            print(f"   结果示例: {current_results[:3]}")
+                            print(f"   : {current_results[:3]}")
                     else:
-                        print(f"      查询失败，返回空结果")
+                        print(f"      ")
 
                 query_time = float(np.sum(query_times)) if query_times else 0
                 decrypt_time = float(np.sum(decrypt_times)) if decrypt_times else 0
             
             else:
-                print(f"      未知模型类型: {model_type}")
+                print(f"      : {model_type}")
                 return None
             
-            # 收集该模型类型的指标
-            phase_comm = {'upload': 0, 'query': 0, 'decrypt': 0}
+            # 
+            phase_comm = {'upload': 0, 'check': 0, 'query': 0, 'decrypt': 0}
             for c in wrapper.metrics['communication_sizes']:
                 if isinstance(c, dict):
                     t = c.get('type')
                     s = c.get('size', 0)
                     if t == 'encrypt':
                         phase_comm['upload'] += s
+                    elif t == 'check':
+                        phase_comm['check'] += s
+                        check_request_size_total += c.get('request_size', 0)
+                        check_response_size_total += c.get('response_size', 0)
                     elif t == 'query':
                         phase_comm['query'] += s
                     elif t == 'decrypt':
@@ -446,6 +467,9 @@ class ExperimentRunner:
                                        for s in wrapper.metrics['communication_sizes']],
                 'communication_size': float(np.sum(communication_sizes)) if communication_sizes else 0,
                 'comm_upload_size': phase_comm['upload'],
+                'comm_check_size': phase_comm['check'],
+                'comm_check_request_size': check_request_size_total,
+                'comm_check_response_size': check_response_size_total,
                 'comm_query_size': phase_comm['query'],
                 'comm_decrypt_size': phase_comm['decrypt'],
                 'success': results is not None,
@@ -453,30 +477,30 @@ class ExperimentRunner:
             }
             
             if results:
-                print(f"\n   查询成功! 结果数量: {len(results)}")
+                print(f"\n   ! : {len(results)}")
             
             return model_metrics
             
         except Exception as e:
-            print(f"\n   实验运行失败: {e}")
+            print(f"\n   : {e}")
             import traceback
             traceback.print_exc()
             return None
     
     def run(self) -> Dict:
-        """运行完整实验（测试所有模型类型）"""
-        print("\n" + "="*80)
-        print("🚀 开始 DeCart 方案多模型实验")
-        print("="*80)
-        print(f"\n📋 实验配置:")
+        """Execute all configured experiment runs and summarize the results."""
+        print("\n" + "=" * 80)
+        print("Starting DeCart experiments")
+        print("=" * 80)
+        print(f"\nConfiguration:")
         for key, value in asdict(self.config).items():
             print(f"   {key}: {value}")
         
-        # 对每种模型类型运行实验
+        # ?
         for model_type in self.config.model_types:
-            print(f"\n{'#'*70}")
-            print(f"📊 测试模型类型: {model_type}")
-            print(f"{'#'*70}")
+            print(f"\n{'#' * 70}")
+            print(f"Model type: {model_type}")
+            print(f"{'#' * 70}")
             
             model_results = self.results['models'][model_type]
             
@@ -484,7 +508,7 @@ class ExperimentRunner:
                 run_result = self.run_single_experiment(i, model_type)
                 
                 if run_result:
-                    # 累加结果
+                    # 
                     model_results['setup_times'].append(run_result.get('setup_time', 0))
                     model_results['keygen_times'].append(run_result.get('keygen_time', 0))
                     model_results['register_times'].append(run_result.get('register_time', 0))
@@ -494,6 +518,9 @@ class ExperimentRunner:
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
                     model_results['communication_sizes'].append(run_result.get('communication_size', 0))
                     model_results['comm_upload_sizes'].append(run_result.get('comm_upload_size', 0))
+                    model_results['comm_check_sizes'].append(run_result.get('comm_check_size', 0))
+                    model_results['comm_check_request_sizes'].append(run_result.get('comm_check_request_size', 0))
+                    model_results['comm_check_response_sizes'].append(run_result.get('comm_check_response_size', 0))
                     model_results['comm_query_sizes'].append(run_result.get('comm_query_size', 0))
                     model_results['comm_decrypt_sizes'].append(run_result.get('comm_decrypt_size', 0))
 
@@ -525,6 +552,9 @@ class ExperimentRunner:
                         'query_time': run_result['query_time'],
                         'decrypt_time': run_result['decrypt_time'],
                         'communication_size': run_result.get('communication_size', 0),
+                        'comm_check_size': run_result.get('comm_check_size', 0),
+                        'comm_check_request_size': run_result.get('comm_check_request_size', 0),
+                        'comm_check_response_size': run_result.get('comm_check_response_size', 0),
                         'setup_auxiliary_sizes': setup_auxiliary_sizes,
                         'register_auxiliary_sizes': register_auxiliary_sizes,
                         'final_auxiliary_sizes': final_auxiliary_sizes,
@@ -532,27 +562,27 @@ class ExperimentRunner:
                         'num_results': run_result['num_results']
                     })
                     
-                    print(f"\n      运行 {i+1} 完成: 查询时间 {run_result['query_time']*1000:.2f} ms")
+                    print(f"\n       {i+1} :  {run_result['query_time']*1000:.2f} ms")
                 else:
-                    print(f"\n      运行 {i+1} 失败")
+                    print(f"\n       {i+1} ")
         
-        # 计算统计
+        # 
         self._compute_statistics()
         
-        # 保存结果
+        # 
         if self.config.save_results:
             self.save_results()
         
         return self.results
     
     def _compute_statistics(self):
-        """计算统计指标（按模型类型）"""
+        """Compute summary statistics from the collected run metrics."""
         summary = {}
         
         for model_type, model_data in self.results['models'].items():
             stats = {}
 
-            # 初始化时间
+            # ?
             if model_data['setup_times']:
                 times = model_data['setup_times']
                 stats['avg_setup_time'] = float(np.mean(times))
@@ -581,7 +611,7 @@ class ExperimentRunner:
                 stats['min_check_time'] = float(np.min(times))
                 stats['max_check_time'] = float(np.max(times))
             
-            # 加密时间
+            # 
             if model_data['encrypt_times']:
                 times = model_data['encrypt_times']
                 stats['avg_encrypt_time'] = float(np.mean(times))
@@ -589,7 +619,7 @@ class ExperimentRunner:
                 stats['min_encrypt_time'] = float(np.min(times))
                 stats['max_encrypt_time'] = float(np.max(times))
             
-            # 查询时间
+            # 
             if model_data['query_times']:
                 times = model_data['query_times']
                 stats['avg_query_time'] = float(np.mean(times))
@@ -597,7 +627,7 @@ class ExperimentRunner:
                 stats['min_query_time'] = float(np.min(times))
                 stats['max_query_time'] = float(np.max(times))
             
-            # 解密时间
+            # 
             if model_data['decrypt_times']:
                 times = model_data['decrypt_times']
                 stats['avg_decrypt_time'] = float(np.mean(times))
@@ -605,13 +635,16 @@ class ExperimentRunner:
                 stats['min_decrypt_time'] = float(np.min(times))
                 stats['max_decrypt_time'] = float(np.max(times))
             
-            # 通信开销
+            # 
             if model_data['communication_sizes']:
                 sizes = model_data['communication_sizes']
                 stats['avg_communication_size'] = float(np.mean(sizes)) / 1024  # KB
                 stats['std_communication_size'] = float(np.std(sizes)) / 1024
                 stats['total_communication'] = float(np.sum(sizes)) / 1024  # KB
-
+            if model_data['comm_check_request_sizes']:
+                stats['avg_check_request_size_kb'] = float(np.mean(model_data['comm_check_request_sizes'])) / 1024
+            if model_data['comm_check_response_sizes']:
+                stats['avg_check_response_size_kb'] = float(np.mean(model_data['comm_check_response_sizes'])) / 1024
             auxiliary_size_fields = {
                 'setup_crs_sizes': 'avg_setup_crs_size_kb',
                 'setup_pp_sizes': 'avg_setup_pp_size_kb',
@@ -634,13 +667,12 @@ class ExperimentRunner:
         
         self.results['summary'] = summary
         
-        # 打印结果
-        print("\n" + "="*80)
-        print("📊 多模型实验结果统计")
-        print("="*80)
+        print("\n" + "=" * 80)
+        print("DeCart Result Summary")
+        print("=" * 80)
         
         for model_type, stats in summary.items():
-            print(f"\n▶ 模型类型: {model_type}")
+            print(f"\nModel: {model_type}")
             for key, value in stats.items():
                 if 'time' in key:
                     print(f"   {key}: {value*1000:.2f} ms")
@@ -650,7 +682,7 @@ class ExperimentRunner:
                     print(f"   {key}: {value}")
     
     def save_results(self):
-        """保存实验结果"""
+        """Persist the collected experiment results as JSON."""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         json_filename = f"decart_multimodel_exp_{timestamp}.json"
         json_path = os.path.join(self.config.results_dir, json_filename)
@@ -673,33 +705,36 @@ class ExperimentRunner:
         with open(json_path, 'w') as f:
             json.dump(json_results, f, indent=2)
         
-        print(f"\n   多模型实验结果已保存:")
+        print(f"\nSaved results:")
         print(f"   JSON: {json_path}")
 
 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="DeCart 方案多模型实验")
-    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="最大用户数")
-    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="每块用户数")
-    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
-    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
-    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
-    parser.add_argument("--num-queriers", type=int, default=1, help="真实查询者数量")
-    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
-    parser.add_argument("--model-types", nargs="+", 
-                       default=['dot', 'decision_tree', 'neural_network'],
-                       help="模型类型列表")
-    parser.add_argument("--results-dir", type=str, default="experiments/results/our_decart", help="结果保存目录")
-    parser.add_argument("--no-save", action="store_true", help="不保存结果")
-    
+    parser = argparse.ArgumentParser(description="Run the DeCart experiment runner.")
+    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="Maximum number of users")
+    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="Block size")
+    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="Number of records")
+    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="Record dimension")
+    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="Access policy size")
+    parser.add_argument("--num-queriers", type=int, default=1, help="Number of queriers")
+    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="Number of repeated runs")
+    parser.add_argument(
+        "--model-types",
+        nargs="+",
+        default=['dot', 'decision_tree', 'neural_network'],
+        help="Model types to evaluate",
+    )
+    parser.add_argument("--results-dir", type=str, default="experiments/results/our_decart", help="Directory for JSON results")
+    parser.add_argument("--no-save", action="store_true", help="Skip saving JSON results")
+
     args = parser.parse_args()
     
-    print("\n" + "="*80)
-    print(f"🚀 启动 DeCart 多模型实验 (规模: N={args.N}, n={args.n})")
-    print("="*80)
-    print(f"\n📋 命令行参数:")
+    print("\n" + "=" * 80)
+    print(f"DeCart Experiment (N={args.N}, n={args.n})")
+    print("=" * 80)
+    print("\nConfiguration")
     print(f"   N: {args.N}")
     print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
@@ -723,11 +758,10 @@ if __name__ == "__main__":
         save_results=not args.no_save,
         results_dir=args.results_dir
     )
-    
-    # 直接运行
+
     runner = ExperimentRunner(config)
-    results = runner.run()
+    runner.run()
     
-    print("\n" + "="*80)
-    print(" 实验完成")
-    print("="*80)
+    print("\n" + "=" * 80)
+    print("DeCart Experiment Completed")
+    print("=" * 80)

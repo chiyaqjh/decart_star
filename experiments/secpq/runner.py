@@ -72,6 +72,7 @@ class ExperimentRunner:
                 'decrypt_times': [],
                 'communication_sizes': [],
                 'comm_upload_sizes': [],
+                'comm_check_sizes': [],
                 'comm_query_sizes': [],
                 'comm_decrypt_sizes': [],
                 'setup_crs_sizes': [],
@@ -184,13 +185,15 @@ class ExperimentRunner:
                 for s in wrapper.metrics['communication_sizes']
             ]
 
-            phase_comm = {'upload': 0, 'query': 0, 'decrypt': 0}
+            phase_comm = {'upload': 0, 'check': 0, 'query': 0, 'decrypt': 0}
             for c in wrapper.metrics['communication_sizes']:
                 if isinstance(c, dict):
                     t = c.get('type')
                     s = c.get('size', 0)
                     if t == 'encrypt':
                         phase_comm['upload'] += s
+                    elif t == 'check':
+                        phase_comm['check'] += s
                     elif t == 'query':
                         phase_comm['query'] += s
                     elif t == 'decrypt':
@@ -215,6 +218,7 @@ class ExperimentRunner:
                 'communication_sizes': [s.copy() if isinstance(s, dict) else s for s in wrapper.metrics['communication_sizes']],
                 'communication_size': float(np.sum(communication_sizes)) if communication_sizes else 0,
                 'comm_upload_size': phase_comm['upload'],
+                'comm_check_size': phase_comm['check'],
                 'comm_query_size': phase_comm['query'],
                 'comm_decrypt_size': phase_comm['decrypt'],
                 'success': results is not None,
@@ -259,6 +263,7 @@ class ExperimentRunner:
                     model_results['decrypt_times'].append(run_result['decrypt_time'])
                     model_results['communication_sizes'].append(run_result.get('communication_size', 0))
                     model_results['comm_upload_sizes'].append(run_result.get('comm_upload_size', 0))
+                    model_results['comm_check_sizes'].append(run_result.get('comm_check_size', 0))
                     model_results['comm_query_sizes'].append(run_result.get('comm_query_size', 0))
                     model_results['comm_decrypt_sizes'].append(run_result.get('comm_decrypt_size', 0))
 

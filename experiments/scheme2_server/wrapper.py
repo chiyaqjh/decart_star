@@ -287,6 +287,11 @@ class ServerSchemeExperimentWrapper:
         check_start = time.perf_counter()
         dataset_info = self.encrypted_datasets.get(owner_id, {}).get(dataset_id)
         self.metrics['check_times'].append(time.perf_counter() - check_start)
+        self.metrics['communication_sizes'].append({
+            'type': 'check',
+            'size': 0,
+            'records': 0,
+        })
 
         if dataset_info is None:
             return None
