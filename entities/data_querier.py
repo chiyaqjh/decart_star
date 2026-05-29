@@ -368,12 +368,15 @@ class DataQuerier:
         
         if not C_M.get('access_granted', False):
             raise ValueError("没有访问权限，无法加密模型")
+
+        # AI模型应使用系统恢复出的同态上下文进行加密，避免与查询阶段的HE实例不一致。
+        system_he = self.key_curator.system.he
         
         # 根据模型类型处理
         if isinstance(model, list):
             # 点积模型 - 直接加密列表
             print(f"   加密点积模型 (列表)")
-            encrypted_model = self.he.encrypt(model)
+            encrypted_model = system_he.encrypt(model)
             C_M['encrypted_model'] = encrypted_model
             C_M['model_dim'] = len(model)
             C_M['model_type'] = 'dot_product'
@@ -389,26 +392,38 @@ class DataQuerier:
                 bias = model.get('bias', [])
                 input_dim = model.get('input_dim', 784)
                 output_dim = model.get('output_dim', 10)
-                
-                # 加密权重
-                encrypted_weights = []
-                for w in weights:
+
+                # 按行打包权重，避免大维度模型生成过多单元素密文导致 bad allocation。
+                encrypted_weight_rows = []
+                for row_idx in range(output_dim):
+                    row_start = row_idx * input_dim
+                    row_end = row_start + input_dim
+                    weight_row = [float(value) for value in weights[row_start:row_end]]
+                    if len(weight_row) < input_dim:
+                        weight_row.extend([0.0] * (input_dim - len(weight_row)))
                     try:
-                        encrypted_w = self.he.encrypt([float(w)])
-                        encrypted_weights.append(encrypted_w)
+                        encrypted_row = system_he.encrypt(weight_row)
+                        encrypted_weight_rows.append(encrypted_row)
                     except Exception as e:
-                        print(f"     权重加密失败: {e}")
-                        encrypted_weights.append(None)
-                
-                # 加密偏置
+                        print(f"     第{row_idx}行权重加密失败: {e}")
+                        encrypted_weight_rows.append(None)
+
+                encrypted_bias_vector = None
+                try:
+                    encrypted_bias_vector = system_he.encrypt([float(value) for value in bias])
+                except Exception as e:
+                    print(f"     偏置向量加密失败: {e}")
+
+                # 兼容旧查询路径：仍然保留字段名，但优先使用打包表示。
                 encrypted_bias = []
-                for b in bias:
-                    try:
-                        encrypted_b = self.he.encrypt([float(b)])
-                        encrypted_bias.append(encrypted_b)
-                    except Exception as e:
-                        print(f"     偏置加密失败: {e}")
-                        encrypted_bias.append(None)
+                if encrypted_bias_vector is None:
+                    for b in bias:
+                        try:
+                            encrypted_b = system_he.encrypt([float(b)])
+                            encrypted_bias.append(encrypted_b)
+                        except Exception as e:
+                            print(f"     偏置加密失败: {e}")
+                            encrypted_bias.append(None)
                 
                 encrypted_model = {
                     'type': 'neural_network',
@@ -419,8 +434,10 @@ class DataQuerier:
                         'activation': 'linear',
                         'weights_shape': (output_dim, input_dim),
                         'bias_shape': (output_dim,),
-                        'encrypted_weights': encrypted_weights,
-                        'encrypted_bias': encrypted_bias
+                        'encrypted_weights': [],
+                        'encrypted_bias': encrypted_bias,
+                        'encrypted_weight_rows': encrypted_weight_rows,
+                        'encrypted_bias_vector': encrypted_bias_vector
                     }]
                 }
                 C_M['encrypted_model'] = encrypted_model
@@ -504,28 +521,38 @@ class DataQuerier:
             print(f"   权重数量: {len(weights)}")
             print(f"   偏置数量: {len(bias)}")
             
-            # 获取公钥
-            pk_h = self.he.public_key
+            # 预训练模型同样需要复用系统HE上下文，避免查询阶段解密失真。
+            system_he = self.key_curator.system.he
             
-            # 加密权重
-            encrypted_weights = []
-            for w in weights:
+            encrypted_weight_rows = []
+            for row_idx in range(output_dim):
+                row_start = row_idx * input_dim
+                row_end = row_start + input_dim
+                weight_row = [float(value) for value in weights[row_start:row_end]]
+                if len(weight_row) < input_dim:
+                    weight_row.extend([0.0] * (input_dim - len(weight_row)))
                 try:
-                    encrypted_w = self.he.encrypt([float(w)])
-                    encrypted_weights.append(encrypted_w)
+                    encrypted_row = system_he.encrypt(weight_row)
+                    encrypted_weight_rows.append(encrypted_row)
                 except Exception as e:
-                    print(f"     权重加密失败: {e}")
-                    encrypted_weights.append(None)
-            
-            # 加密偏置
+                    print(f"     第{row_idx}行权重加密失败: {e}")
+                    encrypted_weight_rows.append(None)
+
+            encrypted_bias_vector = None
+            try:
+                encrypted_bias_vector = system_he.encrypt([float(value) for value in bias])
+            except Exception as e:
+                print(f"     偏置向量加密失败: {e}")
+
             encrypted_bias = []
-            for b in bias:
-                try:
-                    encrypted_b = self.he.encrypt([float(b)])
-                    encrypted_bias.append(encrypted_b)
-                except Exception as e:
-                    print(f"     偏置加密失败: {e}")
-                    encrypted_bias.append(None)
+            if encrypted_bias_vector is None:
+                for b in bias:
+                    try:
+                        encrypted_b = system_he.encrypt([float(b)])
+                        encrypted_bias.append(encrypted_b)
+                    except Exception as e:
+                        print(f"     偏置加密失败: {e}")
+                        encrypted_bias.append(None)
             
             encrypted_model = {
                 'type': 'neural_network',
@@ -536,8 +563,10 @@ class DataQuerier:
                     'activation': 'linear',
                     'weights_shape': (output_dim, input_dim),
                     'bias_shape': (output_dim,),
-                    'encrypted_weights': encrypted_weights,
-                    'encrypted_bias': encrypted_bias
+                    'encrypted_weights': [],
+                    'encrypted_bias': encrypted_bias,
+                    'encrypted_weight_rows': encrypted_weight_rows,
+                    'encrypted_bias_vector': encrypted_bias_vector
                 }]
             }
             

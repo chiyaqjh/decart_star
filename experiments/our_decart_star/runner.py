@@ -171,10 +171,12 @@ class ExperimentRunner:
             # ?
             output_dim = 10
             input_dim = self.config.record_dim
+            weight_scale = min(0.1, 1.0 / np.sqrt(max(1, input_dim)))
             
             #  (output_dim x input_dim)
-            weights_matrix = np.random.randn(output_dim, input_dim) * 0.1
-            bias = np.random.randn(output_dim) * 0.1
+            weights_matrix = np.random.randn(output_dim, input_dim) * weight_scale
+            bias = np.random.randn(output_dim) * weight_scale
+            print(f"   NN random init scale: {weight_scale:.6f}")
             
             # 
             weights = weights_matrix.flatten().tolist()

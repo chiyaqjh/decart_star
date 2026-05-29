@@ -70,6 +70,37 @@ python -m experiments.our_decart.runner --num-records 32 --record-dim 32 --polic
 python -m experiments.our_decart_star.runner --num-records 32 --record-dim 32 --policy-size 8 --num-runs 3
 ```
 
+### 4.4 运行独立 Revoke 实验
+
+```bash
+python -m experiments.revoke.runner --scheme decart --model-type dot --num-records 32 --record-dim 32 --policy-size 8 --num-runs 3
+```
+
+```bash
+python -m experiments.revoke.runner --scheme decart_star --model-type neural_network --num-records 32 --record-dim 32 --policy-size 8 --num-runs 3
+```
+
+说明:
+
+- 该实验会验证撤销前查询成功、撤销后旧请求被服务器阻断、撤销后新请求被客户端或服务器阻断、剩余授权用户仍可查询
+- 结果默认保存到 experiments/results/revoke/对应方案子目录
+
+### 4.5 运行原方案目录下的 Revoke 对比实验
+
+```bash
+python -m experiments.our_decart.revoke_runner --N-values 10000 --n-values 32 --num-records-values 10 100 --record-dim-values 10 100 --policy-size-values 32 --model-types dot neural_network --num-runs 1
+```
+
+```bash
+python -m experiments.our_decart_star.revoke_runner --N-values 10000 --n-values 32 --num-records-values 10 100 --record-dim-values 10 100 --policy-size-values 32 --model-types dot neural_network --num-runs 1
+```
+
+说明:
+
+- 两个入口文件分别位于原方案目录下，文件名均为 revoke_runner.py
+- 每个入口会遍历给定设置组合，并把对比结果保存到各自原有结果目录
+- 输出 JSON 会包含按 setting 展开的 runs、summary 和 comparison_summary，便于后续画图对比
+
 说明:
 
 - 默认模型类型为: dot decision_tree neural_network

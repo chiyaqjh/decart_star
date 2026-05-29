@@ -822,6 +822,7 @@ class DeCartSystem:
         print(f"\n[Query Single Layer NN] 执行加密查询")
         
         results = []
+        progress_interval = 10 if len(encrypted_data) <= 1000 else 100
         
         # 检查是否有层
         if not encrypted_nn.get('layers'):
@@ -835,40 +836,65 @@ class DeCartSystem:
         
         layer = encrypted_nn['layers'][0]
         encrypted_weights = layer.get('encrypted_weights', [])
+        encrypted_weight_rows = layer.get('encrypted_weight_rows', [])
         encrypted_bias = layer.get('encrypted_bias', [])
+        encrypted_bias_vector = layer.get('encrypted_bias_vector')
         weights_shape = layer.get('weights_shape', (10, 784))
 
         output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else max(1, len(encrypted_bias))
         input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else 0
 
-        # 预解密权重和偏置，避免在每条记录上重复解密模型参数
+        # 预解密权重和偏置，避免在每条记录上重复解密模型参数。
         plain_weights = [[0.0 for _ in range(input_dim)] for _ in range(output_dim)]
-        for i in range(output_dim):
-            for j in range(input_dim):
-                idx = i * input_dim + j
-                if idx >= len(encrypted_weights) or encrypted_weights[idx] is None:
+        if encrypted_weight_rows:
+            for i in range(output_dim):
+                if i >= len(encrypted_weight_rows) or encrypted_weight_rows[i] is None:
                     continue
                 try:
-                    w = self.he.decrypt(encrypted_weights[idx])
-                    if isinstance(w, list):
-                        plain_weights[i][j] = float(w[0]) if w else 0.0
-                    else:
-                        plain_weights[i][j] = float(w)
+                    row_values = self.he.decrypt(encrypted_weight_rows[i])
+                    if not isinstance(row_values, list):
+                        row_values = [float(row_values)]
+                    for j, value in enumerate(row_values[:input_dim]):
+                        plain_weights[i][j] = float(value)
                 except Exception:
-                    plain_weights[i][j] = 0.0
+                    continue
+        else:
+            for i in range(output_dim):
+                for j in range(input_dim):
+                    idx = i * input_dim + j
+                    if idx >= len(encrypted_weights) or encrypted_weights[idx] is None:
+                        continue
+                    try:
+                        w = self.he.decrypt(encrypted_weights[idx])
+                        if isinstance(w, list):
+                            plain_weights[i][j] = float(w[0]) if w else 0.0
+                        else:
+                            plain_weights[i][j] = float(w)
+                    except Exception:
+                        plain_weights[i][j] = 0.0
 
         plain_bias = [0.0 for _ in range(output_dim)]
-        for i in range(output_dim):
-            if i >= len(encrypted_bias) or encrypted_bias[i] is None:
-                continue
+        if encrypted_bias_vector is not None:
             try:
-                b = self.he.decrypt(encrypted_bias[i])
-                if isinstance(b, list):
-                    plain_bias[i] = float(b[0]) if b else 0.0
-                else:
-                    plain_bias[i] = float(b)
+                bias_values = self.he.decrypt(encrypted_bias_vector)
+                if not isinstance(bias_values, list):
+                    bias_values = [float(bias_values)]
+                for i, value in enumerate(bias_values[:output_dim]):
+                    plain_bias[i] = float(value)
             except Exception:
-                plain_bias[i] = 0.0
+                plain_bias = [0.0 for _ in range(output_dim)]
+        else:
+            for i in range(output_dim):
+                if i >= len(encrypted_bias) or encrypted_bias[i] is None:
+                    continue
+                try:
+                    b = self.he.decrypt(encrypted_bias[i])
+                    if isinstance(b, list):
+                        plain_bias[i] = float(b[0]) if b else 0.0
+                    else:
+                        plain_bias[i] = float(b)
+                except Exception:
+                    plain_bias[i] = 0.0
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
@@ -889,6 +915,8 @@ class DeCartSystem:
                 # 保持返回结构兼容：每条记录对应一个密文结果
                 result = self.he.encrypt(outputs_plain if outputs_plain else [0.0])
                 results.append(result)
+                if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
+                    print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
                 
             except Exception as e:
                 print(f"   第{data_idx}条数据查询失败: {e}")
@@ -896,6 +924,8 @@ class DeCartSystem:
                     results.append(self.he.encrypt([0.0 for _ in range(max(1, output_dim))]))
                 except:
                     results.append(None)
+                if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
+                    print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
         
         print(f"      单层神经网络查询完成，生成 {len(results)} 个结果")
         return results
@@ -941,11 +971,14 @@ class DeCartSystem:
             print(f"   模型类型: 点积")
             encrypted_results = []
             failed_count = 0
+            progress_interval = 10 if len(encrypted_data_list) <= 1000 else 100
             
             for i, encrypted_data in enumerate(encrypted_data_list):
                 try:
                     result = encrypted_data.dot(encrypted_model)
                     encrypted_results.append(result)
+                    if (i + 1) % progress_interval == 0 or (i + 1) == len(encrypted_data_list):
+                        print(f"   点积查询进度: {i + 1}/{len(encrypted_data_list)}")
                 except Exception as e:
                     failed_count += 1
                     try:
@@ -953,6 +986,8 @@ class DeCartSystem:
                     except:
                         result = None
                     encrypted_results.append(result)
+                    if (i + 1) % progress_interval == 0 or (i + 1) == len(encrypted_data_list):
+                        print(f"   点积查询进度: {i + 1}/{len(encrypted_data_list)}")
         
         ER = {
             'encrypted_results': encrypted_results,
@@ -978,11 +1013,15 @@ class DeCartSystem:
         
         decrypted_results = []
         failed_count = 0
+        total_results = len(ER['encrypted_results'])
+        progress_interval = 10 if total_results <= 1000 else 100
         
         for i, encrypted_result in enumerate(ER['encrypted_results']):
             if encrypted_result is None:
                 decrypted_results.append(0.0)
                 failed_count += 1
+                if (i + 1) % progress_interval == 0 or (i + 1) == total_results:
+                    print(f"      解密进度: {i + 1}/{total_results}")
                 continue
                 
             try:
@@ -998,6 +1037,8 @@ class DeCartSystem:
                 print(f"   第{i}个结果解密失败: {e}")
                 decrypted_results.append(0.0)
                 failed_count += 1
+            if (i + 1) % progress_interval == 0 or (i + 1) == total_results:
+                print(f"      解密进度: {i + 1}/{total_results}")
         
         print(f"      Decrypt完成")
         print(f"      获得 {len(decrypted_results)} 个解密值")

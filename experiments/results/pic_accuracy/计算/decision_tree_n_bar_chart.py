@@ -111,6 +111,20 @@ def _slugify_stage_label(stage_label):
     return stage_label.lower().replace(' ', '_')
 
 
+def normalize_stage_selection(selected_stages):
+    if not selected_stages:
+        return [stage_label for _, stage_label in STAGES]
+
+    valid_by_lower = {stage_label.lower(): stage_label for _, stage_label in STAGES}
+    normalized = []
+    for stage in selected_stages:
+        stage_label = valid_by_lower.get(stage.lower())
+        if stage_label is None:
+            raise ValueError(f'Unknown stage: {stage}. Valid stages: {", ".join(valid_by_lower.values())}')
+        normalized.append(stage_label)
+    return normalized
+
+
 def plot_single_stage_chart(n_values, stage_label, stage_values, total_users, num_records, record_dim, policy_size, output_path):
     stage_schemes = schemes_for_stage(stage_label)
     x = np.arange(len(n_values), dtype=float)
@@ -144,7 +158,16 @@ def plot_single_stage_chart(n_values, stage_label, stage_values, total_users, nu
     ax_top.grid(which='major', axis='y', linestyle='--', linewidth=1, color='#888', alpha=0.6, zorder=0)
     all_values = [value for values in stage_values.values() for value in values]
     axis_max = max(all_values) if all_values else 1.0
-    ax_top.set_ylim(0, max(axis_max * 1.08, 1.0))
+    if stage_label == 'Setup':
+        positive_values = [value for value in all_values if value > 0]
+        floor_value = max(min(positive_values) / 2.0, 1e2) if positive_values else 1e2
+        for patch in ax_top.patches:
+            if patch.get_height() <= 0:
+                patch.set_height(floor_value)
+        ax_top.set_yscale('log')
+        ax_top.set_ylim(floor_value, max(axis_max * 2.0, floor_value * 20.0))
+    else:
+        ax_top.set_ylim(0, max(axis_max * 1.08, 1.0))
 
     ax_top.text(
         0.03,
@@ -158,14 +181,20 @@ def plot_single_stage_chart(n_values, stage_label, stage_values, total_users, nu
         zorder=4,
     )
 
+    legend_loc = 'upper left'
+    legend_anchor = (0.02, 0.78)
+    if stage_label == 'Setup':
+        legend_loc = 'upper left'
+        legend_anchor = (0.02, 0.86)
+
     ax_top.legend(
         legend_handles,
         stage_schemes,
         fontsize=10,
         frameon=True,
         edgecolor='#ccc',
-        loc='upper left',
-        bbox_to_anchor=(0.02, 0.78),
+        loc=legend_loc,
+        bbox_to_anchor=legend_anchor,
         ncol=1,
     )
 
@@ -187,10 +216,10 @@ def plot_single_stage_chart(n_values, stage_label, stage_values, total_users, nu
     plt.close(fig)
 
 
-def plot_stage_charts(n_values, stage_curves, total_users, num_records, record_dim, policy_size, output_path):
+def plot_stage_charts(n_values, stage_curves, total_users, num_records, record_dim, policy_size, output_path, selected_stages):
     output_dir = output_path.parent
     output_stem = output_path.stem
-    for _, stage_label in STAGES:
+    for stage_label in selected_stages:
         stage_output = output_dir / f'{output_stem}_{_slugify_stage_label(stage_label)}.png'
         plot_single_stage_chart(
             n_values=n_values,
@@ -213,12 +242,14 @@ def main():
     parser.add_argument('--policy-size', type=int, default=Config.EXPERIMENT_POLICY_SIZE, help='Policy size used to filter results.')
     parser.add_argument('--num-runs', type=int, default=1, help='Run count used to filter results.')
     parser.add_argument('--model-key', type=str, default='decision_tree', help='Model key in result summaries.')
+    parser.add_argument('--stages', type=str, nargs='*', help='Optional subset of stages to generate, e.g. Setup KeyGen Register.')
     parser.add_argument(
         '--output',
         type=str,
         default=str(OUTPUT_DIR / 'decision_tree_n_latency.png'),
     )
     args = parser.parse_args()
+    selected_stages = normalize_stage_selection(args.stages)
 
     stage_curves, used_sources = collect_stage_curves(
         n_values=args.n_values,
@@ -238,6 +269,7 @@ def main():
         record_dim=args.record_dim,
         policy_size=args.policy_size,
         output_path=output_path,
+        selected_stages=selected_stages,
     )
 
     print(f'Generated charts under: {output_path.parent}')
