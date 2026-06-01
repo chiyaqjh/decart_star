@@ -62,7 +62,7 @@ def _render_structure_plot(charts, metric, output_name, run_missing):
 
     if metric.endswith('_crs_kb') or metric.endswith('_total_aux_kb'):
         ax.set_yscale('log')
-        ax.set_ylabel('Size (KB, log scale)', fontsize=14)
+        ax.set_ylabel('Size (KB)', fontsize=14)
         charts.style_axes(ax)
 
     charts.save_figure(fig, output_name, out_dir=CURRENT_DIR)
