@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
 import numpy as np
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 import os
 import time
 
@@ -386,6 +386,34 @@ def load_mnist(data_dir: str = './data',
     }
     
     return result
+
+
+def load_mnist_records(num_records: int,
+                       data_dir: str = './data',
+                       split: str = 'test') -> Tuple[List[List[float]], List[int]]:
+    """Load a fixed number of flattened MNIST samples for experiment runners."""
+    if split not in {'train', 'test'}:
+        raise ValueError("split must be 'train' or 'test'")
+
+    loader = MNISTDataLoader(data_dir=data_dir, batch_size=num_records)
+    loader.load_data(use_validation=False, download=True)
+
+    dataset = loader.train_dataset if split == 'train' else loader.test_dataset
+    if dataset is None:
+        raise ValueError(f"MNIST {split} dataset is not available")
+
+    count = min(num_records, len(dataset))
+    records = []
+    labels = []
+    for index in range(count):
+        image, label = dataset[index]
+        records.append(image.view(-1).tolist())
+        labels.append(int(label))
+
+    if count < num_records:
+        raise ValueError(f"Requested {num_records} MNIST records, but only found {count} in split '{split}'")
+
+    return records, labels
 
 
 def visualize_mnist_sample(loader: MNISTDataLoader, 

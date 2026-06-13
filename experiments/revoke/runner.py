@@ -15,6 +15,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config import Config
+from experiments.datasets import get_dataset_spec, load_experiment_records
+from experiments.models.model_loader import load_trained_experiment_model
+from experiments.result_paths import resolve_results_dir
 from experiments.our_decart.wrapper import DeCartExperimentWrapper
 from experiments.our_decart_star.wrapper import DeCartStarExperimentWrapper
 
@@ -28,6 +31,10 @@ class RevokeExperimentConfig:
     n: int = Config.BLOCK_SIZE
     num_records: int = Config.EXPERIMENT_NUM_RECORDS
     record_dim: int = Config.EXPERIMENT_RECORD_DIM
+    dataset: str = "synthetic"
+    mnist_data_dir: str = "data"
+    model_source: str = "synthetic"
+    trained_models_dir: str = "experiments/models/trained"
     policy_size: int = Config.EXPERIMENT_POLICY_SIZE
     model_type: str = "dot"
     num_runs: int = Config.EXPERIMENT_NUM_RUNS
@@ -47,12 +54,20 @@ class RevokeExperimentConfig:
         if self.N < 3:
             raise ValueError("N must be at least 3 for revoke experiments")
 
+        if self.dataset not in {"synthetic", "mnist", "uci_har"}:
+            raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
+        dataset_spec = get_dataset_spec(self.dataset)
+        if dataset_spec is not None and self.record_dim != dataset_spec['input_dim']:
+            raise ValueError(f"{self.dataset} experiments require record_dim={dataset_spec['input_dim']}")
+        if self.model_source not in {'synthetic', 'trained'}:
+            raise ValueError("model_source must be 'synthetic' or 'trained'")
+
         minimum_policy_size = 3
         if self.policy_size < minimum_policy_size:
             self.policy_size = minimum_policy_size
 
         if self.results_dir is None:
-            self.results_dir = os.path.join("experiments", "results", "revoke", self.scheme)
+            self.results_dir = resolve_results_dir(self.dataset, os.path.join("experiments", "results", "revoke", self.scheme), os.path.join("revoke", self.scheme), self.results_dir)
 
 
 class RevokeExperimentRunner:
@@ -77,6 +92,11 @@ class RevokeExperimentRunner:
 
     def generate_test_data(self) -> List[List[float]]:
         """Generate normalized synthetic records."""
+        if self.config.dataset != 'synthetic':
+            print(f"\nLoading {self.config.dataset} samples from {self.config.mnist_data_dir}...")
+            data, _ = load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
+            return data
+
         data = []
         for _ in range(self.config.num_records):
             record = np.random.randn(self.config.record_dim).tolist()
@@ -86,6 +106,10 @@ class RevokeExperimentRunner:
 
     def generate_model(self) -> Any:
         """Generate a model matching the shared experiment conventions."""
+        if self.config.model_source == 'trained':
+            print(f"   Loading trained {self.config.model_type} model...")
+            return load_trained_experiment_model(self.config.model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
+
         if self.config.model_type == "dot":
             model = np.random.randn(self.config.record_dim).tolist()
             max_val = max(abs(min(model)), abs(max(model))) or 1.0
@@ -605,6 +629,10 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="Block size")
     parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="Number of records")
     parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="Record dimension")
+    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="Dataset source")
+    parser.add_argument("--mnist-data-dir", type=str, default="data", help="Directory used to cache MNIST data")
+    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="Model source")
+    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="Directory containing trained model pickle files")
     parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="Access policy size")
     parser.add_argument(
         "--model-type",
@@ -623,6 +651,10 @@ if __name__ == "__main__":
         n=args.n,
         num_records=args.num_records,
         record_dim=args.record_dim,
+        dataset=args.dataset,
+        mnist_data_dir=args.mnist_data_dir,
+        model_source=args.model_source,
+        trained_models_dir=args.trained_models_dir,
         policy_size=args.policy_size,
         model_type=args.model_type,
         num_runs=args.num_runs,

@@ -19,6 +19,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config import Config
+from experiments.datasets import get_dataset_spec, load_experiment_records
+from experiments.models.model_loader import load_trained_experiment_model
+from experiments.result_paths import resolve_results_dir
 from experiments.secpq.wrapper import SecPQExperimentWrapper
 
 
@@ -32,12 +35,16 @@ class ExperimentConfig:
     n: int = Config.BLOCK_SIZE
     num_records: int = Config.EXPERIMENT_NUM_RECORDS
     record_dim: int = Config.EXPERIMENT_RECORD_DIM
+    dataset: str = 'synthetic'
+    mnist_data_dir: str = 'data'
+    model_source: str = 'synthetic'
+    trained_models_dir: str = 'experiments/models/trained'
     model_types: List[str] = None
     policy_size: int = Config.EXPERIMENT_POLICY_SIZE
     num_queriers: int = 1
     num_runs: int = Config.EXPERIMENT_NUM_RUNS
     save_results: bool = True
-    results_dir: str = "experiments/results/secpq"
+    results_dir: Optional[str] = None
 
     def __post_init__(self):
         if self.model_types is None:
@@ -48,6 +55,14 @@ class ExperimentConfig:
             raise ValueError(f"SecPQ 仅支持决策树模型，收到不支持的模型类型: {unsupported}")
         if self.num_queriers < 1:
             raise ValueError('num_queriers 必须至少为 1')
+        if self.dataset not in {'synthetic', 'mnist', 'uci_har'}:
+            raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
+        dataset_spec = get_dataset_spec(self.dataset)
+        if dataset_spec is not None and self.record_dim != dataset_spec['input_dim']:
+            raise ValueError(f"{self.dataset} experiments require record_dim={dataset_spec['input_dim']}")
+        if self.model_source not in {'synthetic', 'trained'}:
+            raise ValueError("model_source must be 'synthetic' or 'trained'")
+        self.results_dir = resolve_results_dir(self.dataset, "experiments/results/secpq", "secpq", self.results_dir)
 
 
 class ExperimentRunner:
@@ -103,6 +118,10 @@ class ExperimentRunner:
         print(f"{label} [{bar}] {current}/{total}", end=end, flush=True)
 
     def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
+        if self.config.dataset != 'synthetic':
+            print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
+            return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
+
         data = []
         for _ in range(self.config.num_records):
             record = np.random.randn(self.config.record_dim).tolist()
@@ -113,6 +132,10 @@ class ExperimentRunner:
         return data, []
 
     def generate_model(self, model_type: str) -> Any:
+        if self.config.model_source == 'trained':
+            print(f"   加载训练好的 {model_type} 模型...")
+            return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
+
         if model_type == 'decision_tree':
             return {
                 'type': 'decision_tree',
@@ -441,11 +464,15 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="每块用户数")
     parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
     parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
+    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="数据集来源")
+    parser.add_argument("--mnist-data-dir", type=str, default="data", help="MNIST 缓存目录")
+    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="模型来源")
+    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="训练模型目录")
     parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
     parser.add_argument("--num-queriers", type=int, default=1, help="真实查询者数量")
     parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
     parser.add_argument("--model-types", nargs="+", default=list(SUPPORTED_MODEL_TYPES), help="模型类型列表，仅支持 decision_tree")
-    parser.add_argument("--results-dir", type=str, default="experiments/results/secpq", help="结果保存目录")
+    parser.add_argument("--results-dir", type=str, default=None, help="结果保存目录")
     parser.add_argument("--no-save", action="store_true", help="不保存结果")
 
     args = parser.parse_args()
@@ -458,6 +485,10 @@ if __name__ == "__main__":
     print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
     print(f"   record-dim: {args.record_dim}")
+    print(f"   dataset: {args.dataset}")
+    print(f"   mnist-data-dir: {args.mnist_data_dir}")
+    print(f"   model-source: {args.model_source}")
+    print(f"   trained-models-dir: {args.trained_models_dir}")
     print(f"   policy-size: {args.policy_size}")
     print(f"   num-queriers: {args.num_queriers}")
     print(f"   num-runs: {args.num_runs}")
@@ -470,6 +501,10 @@ if __name__ == "__main__":
         n=args.n,
         num_records=args.num_records,
         record_dim=args.record_dim,
+        dataset=args.dataset,
+        mnist_data_dir=args.mnist_data_dir,
+        model_source=args.model_source,
+        trained_models_dir=args.trained_models_dir,
         policy_size=args.policy_size,
         num_queriers=args.num_queriers,
         model_types=args.model_types,

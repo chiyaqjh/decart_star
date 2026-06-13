@@ -298,6 +298,27 @@ class OfflineSchemeExperimentWrapper:
         else:
             # 默认处理
             return self.he.encrypt([0.0])
+
+    @staticmethod
+    def _evaluate_neural_network_plain(model: Dict[str, Any], plain_record: List[float]) -> float:
+        weights = model.get('weights', [])
+        bias = model.get('bias', [])
+        output_dim = int(model.get('output_dim', 10) or 10)
+        input_dim = len(plain_record)
+
+        outputs = []
+        for output_index in range(min(output_dim, 10)):
+            start_idx = output_index * input_dim
+            end_idx = start_idx + input_dim
+            row_weights = weights[start_idx:end_idx] if len(weights) > start_idx else []
+            if not row_weights:
+                outputs.append(0.0)
+                continue
+            value = sum(float(weight) * plain_record[idx] for idx, weight in enumerate(row_weights) if idx < input_dim)
+            if output_index < len(bias):
+                value += float(bias[output_index])
+            outputs.append(value)
+        return outputs[0] if outputs else 0.0
     
     def execute_query(self,
                      querier_id: int,
@@ -399,6 +420,16 @@ class OfflineSchemeExperimentWrapper:
                             current_id = node.get('right')
                         depth += 1
 
+                    results.append(self.he.encrypt([pred]))
+                except:
+                    results.append(self.he.encrypt([0.0]))
+        elif isinstance(model, dict) and model.get('type') == 'neural_network':
+            for enc_record in encrypted_data:
+                try:
+                    plain_record = self.he.decrypt(enc_record)
+                    if not isinstance(plain_record, list):
+                        plain_record = [float(plain_record)]
+                    pred = self._evaluate_neural_network_plain(model, plain_record)
                     results.append(self.he.encrypt([pred]))
                 except:
                     results.append(self.he.encrypt([0.0]))

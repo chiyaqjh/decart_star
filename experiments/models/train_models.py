@@ -1,269 +1,503 @@
-# decart/experiments/train/train_models.py
-"""
-模型训练脚本 - 生成符合要求的模型文件
-只保留单层CNN (展平版)
-"""
+"""Train real experiment models for MNIST and UCI HAR."""
 
+import argparse
 import os
 import sys
 import pickle
-import numpy as np
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Dict, List, Tuple
 
-# 添加项目根目录到路径
+import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Subset
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_dir = os.path.dirname(os.path.dirname(current_dir))
 if project_dir not in sys.path:
     sys.path.insert(0, project_dir)
 
-# 模型保存目录
+from experiments.datasets import MNISTDataLoader, UCIHARDataLoader
+
 MODEL_SAVE_DIR = os.path.join(project_dir, 'experiments', 'models', 'trained')
 os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 
-print(f"📁 模型将保存到: {MODEL_SAVE_DIR}")
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+SEED = 45
+LEARNING_RATE = 0.05
+TREE_FEATURE_CANDIDATES = 64
+TREE_THRESHOLD_QUANTILES = (0.2, 0.4, 0.6, 0.8)
 
 
-def train_cnn_single_flattened():
-    """
-    训练单层CNN (展平版 - 完全符合要求)
-    MNIST输入: 1x28x28 = 784 -> 10
-    """
-    print("\n" + "="*60)
-    print("训练单层CNN (展平版)")
-    print("="*60)
-    
-    # 固定随机种子，确保可重复性
-    np.random.seed(45)
-    
-    # MNIST输入: 1x28x28 = 784
-    input_dim = 784
-    output_dim = 10
-    
-    # 单层权重和偏置 - 随机初始化（模拟训练好的模型）
-    weights = np.random.randn(output_dim, input_dim) * 0.1
-    bias = np.random.randn(output_dim) * 0.1
-    
-    # 确保数值在合理范围内（用于CKKS加密）
-    weights = np.clip(weights, -1, 1)
-    bias = np.clip(bias, -1, 1)
-    
-    # 训练历史（模拟）
-    history = {
-        'train_loss': [0.8, 0.5, 0.35, 0.25, 0.18],
-        'train_acc': [0.7, 0.8, 0.85, 0.89, 0.92],
-        'val_loss': [0.75, 0.52, 0.4, 0.3, 0.22],
-        'val_acc': [0.72, 0.79, 0.84, 0.87, 0.9]
+@dataclass(frozen=True)
+class DatasetConfig:
+    name: str
+    input_dim: int
+    num_classes: int
+    target_class: int
+    batch_size: int
+    epochs: int
+    train_limit: int | None
+    test_limit: int | None
+
+
+DATASET_CONFIGS = {
+    'mnist': DatasetConfig(
+        name='mnist',
+        input_dim=784,
+        num_classes=10,
+        target_class=0,
+        batch_size=128,
+        epochs=3,
+        train_limit=12000,
+        test_limit=2000,
+    ),
+    'uci_har': DatasetConfig(
+        name='uci_har',
+        input_dim=561,
+        num_classes=6,
+        target_class=0,
+        batch_size=128,
+        epochs=6,
+        train_limit=None,
+        test_limit=None,
+    ),
+}
+
+
+class FlattenLinearClassifier(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.linear = nn.Linear(input_dim, output_dim)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        flattened = inputs.view(inputs.size(0), -1)
+        return self.linear(flattened)
+
+
+class DotBinaryClassifier(nn.Module):
+    def __init__(self, input_dim: int):
+        super().__init__()
+        self.linear = nn.Linear(input_dim, 1, bias=False)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        flattened = inputs.view(inputs.size(0), -1)
+        return self.linear(flattened).squeeze(-1)
+
+
+@dataclass
+class DatasetBundle:
+    config: DatasetConfig
+    train_loader: DataLoader
+    test_loader: DataLoader
+    train_x: np.ndarray
+    train_y: np.ndarray
+    test_x: np.ndarray
+    test_y: np.ndarray
+
+
+
+def set_seed(seed: int = SEED):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+
+def _limit_dataset(dataset, limit: int | None):
+    if limit is None:
+        return dataset
+    actual = min(limit, len(dataset))
+    if actual == len(dataset):
+        return dataset
+    return Subset(dataset, list(range(actual)))
+
+
+
+def _bundle_from_mnist(config: DatasetConfig, data_dir: str) -> DatasetBundle:
+    loader = MNISTDataLoader(data_dir=data_dir, batch_size=config.batch_size)
+    loader.load_data(use_validation=False, download=True)
+
+    train_dataset = _limit_dataset(loader.train_dataset, config.train_limit)
+    test_dataset = _limit_dataset(loader.test_dataset, config.test_limit)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=0)
+
+    numpy_data = loader.get_numpy_data(flatten=True)
+    train_x, train_y = numpy_data['train']
+    test_x, test_y = numpy_data['test']
+    if config.train_limit is not None:
+        train_x = train_x[:config.train_limit]
+        train_y = train_y[:config.train_limit]
+    if config.test_limit is not None:
+        test_x = test_x[:config.test_limit]
+        test_y = test_y[:config.test_limit]
+
+    return DatasetBundle(config, train_loader, test_loader, train_x, train_y, test_x, test_y)
+
+
+
+def _bundle_from_uci_har(config: DatasetConfig, data_dir: str) -> DatasetBundle:
+    loader = UCIHARDataLoader(data_dir=data_dir, batch_size=config.batch_size)
+    loader.load_data()
+
+    train_dataset = _limit_dataset(loader.train_dataset, config.train_limit)
+    test_dataset = _limit_dataset(loader.test_dataset, config.test_limit)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False, num_workers=0)
+
+    numpy_data = loader.get_numpy_data()
+    train_x, train_y = numpy_data['train']
+    test_x, test_y = numpy_data['test']
+    if config.train_limit is not None:
+        train_x = train_x[:config.train_limit]
+        train_y = train_y[:config.train_limit]
+    if config.test_limit is not None:
+        test_x = test_x[:config.test_limit]
+        test_y = test_y[:config.test_limit]
+
+    return DatasetBundle(config, train_loader, test_loader, train_x, train_y, test_x, test_y)
+
+
+
+def build_dataset_bundle(dataset_name: str, data_dir: str) -> DatasetBundle:
+    config = DATASET_CONFIGS[dataset_name]
+    if dataset_name == 'mnist':
+        return _bundle_from_mnist(config, data_dir)
+    if dataset_name == 'uci_har':
+        return _bundle_from_uci_har(config, data_dir)
+    raise ValueError(f'Unsupported dataset: {dataset_name}')
+
+
+
+def evaluate_multiclass(model: nn.Module, data_loader: DataLoader) -> float:
+    model.eval()
+    total = 0
+    correct = 0
+    with torch.no_grad():
+        for features, labels in data_loader:
+            features = features.to(DEVICE)
+            labels = labels.to(DEVICE)
+            logits = model(features)
+            predictions = logits.argmax(dim=1)
+            correct += int((predictions == labels).sum().item())
+            total += int(labels.size(0))
+    return correct / total if total else 0.0
+
+
+
+def evaluate_binary(model: nn.Module, data_loader: DataLoader, target_class: int) -> float:
+    model.eval()
+    total = 0
+    correct = 0
+    with torch.no_grad():
+        for features, labels in data_loader:
+            features = features.to(DEVICE)
+            labels = (labels == target_class).float().to(DEVICE)
+            logits = model(features)
+            predictions = (torch.sigmoid(logits) >= 0.5).float()
+            correct += int((predictions == labels).sum().item())
+            total += int(labels.size(0))
+    return correct / total if total else 0.0
+
+
+
+def train_neural_network(bundle: DatasetBundle) -> Tuple[FlattenLinearClassifier, Dict[str, List[float]], float]:
+    print('\n' + '=' * 60)
+    print(f'训练单层线性分类器 ({bundle.config.name} {bundle.config.input_dim} -> {bundle.config.num_classes})')
+    print('=' * 60)
+
+    model = FlattenLinearClassifier(bundle.config.input_dim, bundle.config.num_classes).to(DEVICE)
+    optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.CrossEntropyLoss()
+    history = {'train_loss': [], 'train_acc': [], 'val_acc': []}
+
+    for epoch in range(bundle.config.epochs):
+        model.train()
+        running_loss = 0.0
+        running_correct = 0
+        running_total = 0
+
+        for features, labels in bundle.train_loader:
+            features = features.to(DEVICE)
+            labels = labels.to(DEVICE)
+
+            optimizer.zero_grad()
+            logits = model(features)
+            loss = criterion(logits, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += float(loss.item()) * labels.size(0)
+            running_correct += int((logits.argmax(dim=1) == labels).sum().item())
+            running_total += int(labels.size(0))
+
+        train_loss = running_loss / running_total if running_total else 0.0
+        train_acc = running_correct / running_total if running_total else 0.0
+        test_acc = evaluate_multiclass(model, bundle.test_loader)
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_acc'].append(test_acc)
+        print(f'   epoch {epoch + 1}/{bundle.config.epochs}: loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_acc={test_acc:.4f}')
+
+    final_acc = evaluate_multiclass(model, bundle.test_loader)
+    return model, history, final_acc
+
+
+
+def train_dot_model(bundle: DatasetBundle) -> Tuple[DotBinaryClassifier, Dict[str, List[float]], float]:
+    print('\n' + '=' * 60)
+    print(f'训练点积模型 ({bundle.config.name}, class {bundle.config.target_class} vs rest)')
+    print('=' * 60)
+
+    model = DotBinaryClassifier(bundle.config.input_dim).to(DEVICE)
+    optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE)
+    criterion = nn.BCEWithLogitsLoss()
+    history = {'train_loss': [], 'train_acc': [], 'val_acc': []}
+
+    for epoch in range(bundle.config.epochs):
+        model.train()
+        running_loss = 0.0
+        running_correct = 0
+        running_total = 0
+
+        for features, labels in bundle.train_loader:
+            features = features.to(DEVICE)
+            binary_labels = (labels == bundle.config.target_class).float().to(DEVICE)
+
+            optimizer.zero_grad()
+            logits = model(features)
+            loss = criterion(logits, binary_labels)
+            loss.backward()
+            optimizer.step()
+
+            predictions = (torch.sigmoid(logits) >= 0.5).float()
+            running_loss += float(loss.item()) * binary_labels.size(0)
+            running_correct += int((predictions == binary_labels).sum().item())
+            running_total += int(binary_labels.size(0))
+
+        train_loss = running_loss / running_total if running_total else 0.0
+        train_acc = running_correct / running_total if running_total else 0.0
+        test_acc = evaluate_binary(model, bundle.test_loader, bundle.config.target_class)
+        history['train_loss'].append(train_loss)
+        history['train_acc'].append(train_acc)
+        history['val_acc'].append(test_acc)
+        print(f'   epoch {epoch + 1}/{bundle.config.epochs}: loss={train_loss:.4f}, train_acc={train_acc:.4f}, test_acc={test_acc:.4f}')
+
+    final_acc = evaluate_binary(model, bundle.test_loader, bundle.config.target_class)
+    return model, history, final_acc
+
+
+
+def _select_feature_candidates(features: np.ndarray, limit: int = TREE_FEATURE_CANDIDATES) -> np.ndarray:
+    variances = np.var(features, axis=0)
+    if limit >= variances.shape[0]:
+        return np.arange(variances.shape[0])
+    top_indices = np.argpartition(variances, -limit)[-limit:]
+    return np.sort(top_indices)
+
+
+
+def train_decision_tree_stump(bundle: DatasetBundle) -> Tuple[Dict, float]:
+    print('\n' + '=' * 60)
+    print(f'训练决策树桩 ({bundle.config.name}, class {bundle.config.target_class} vs rest)')
+    print('=' * 60)
+
+    train_binary = (bundle.train_y == bundle.config.target_class).astype(np.int32)
+    test_binary = (bundle.test_y == bundle.config.target_class).astype(np.int32)
+
+    candidate_features = _select_feature_candidates(bundle.train_x, limit=min(TREE_FEATURE_CANDIDATES, bundle.config.input_dim))
+    best_score = -1.0
+    best_feature = 0
+    best_threshold = 0.0
+    best_left_value = 0.0
+    best_right_value = 1.0
+
+    for feature_idx in candidate_features:
+        feature_values = bundle.train_x[:, feature_idx]
+        thresholds = np.quantile(feature_values, TREE_THRESHOLD_QUANTILES)
+        for threshold in np.unique(thresholds):
+            left_mask = feature_values <= threshold
+            right_mask = ~left_mask
+            if not left_mask.any() or not right_mask.any():
+                continue
+
+            left_value = float(train_binary[left_mask].mean() >= 0.5)
+            right_value = float(train_binary[right_mask].mean() >= 0.5)
+            predictions = np.where(left_mask, left_value, right_value)
+            score = float((predictions == train_binary).mean())
+            if score > best_score:
+                best_score = score
+                best_feature = int(feature_idx)
+                best_threshold = float(threshold)
+                best_left_value = left_value
+                best_right_value = right_value
+
+    test_predictions = np.where(bundle.test_x[:, best_feature] <= best_threshold, best_left_value, best_right_value)
+    test_accuracy = float((test_predictions == test_binary).mean())
+    model = {
+        'type': 'decision_tree',
+        'format': 'dict',
+        'root': 0,
+        'target_class': bundle.config.target_class,
+        'dataset_name': bundle.config.name,
+        'nodes': [
+            {'id': 0, 'feature': best_feature, 'threshold': best_threshold, 'left': 1, 'right': 2, 'is_leaf': False},
+            {'id': 1, 'value': best_left_value, 'is_leaf': True},
+            {'id': 2, 'value': best_right_value, 'is_leaf': True},
+        ],
     }
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
+    print(f'   best feature={best_feature}, threshold={best_threshold:.4f}, test_acc={test_accuracy:.4f}')
+    return model, test_accuracy
+
+
+
+def save_pickle(config: Dict, prefix: str, dataset_name: str) -> str:
+    timestamp = config['timestamp']
+    filepath = os.path.join(MODEL_SAVE_DIR, f'{prefix}_{dataset_name}_{timestamp}.pkl')
+    with open(filepath, 'wb') as file_obj:
+        pickle.dump(config, file_obj)
+    print(f'✅ 模型保存: {filepath}')
+    return filepath
+
+
+
+def save_neural_network_model(model: FlattenLinearClassifier,
+                              history: Dict[str, List[float]],
+                              test_accuracy: float,
+                              bundle: DatasetBundle,
+                              timestamp: str) -> str:
+    weights = model.linear.weight.detach().cpu().numpy()
+    bias = model.linear.bias.detach().cpu().numpy()
     config = {
+        'dataset_name': bundle.config.name,
         'model_name': 'cnn_single_layer_flattened',
         'timestamp': timestamp,
-        'test_accuracy': 0.90,
+        'test_accuracy': test_accuracy,
         'architecture': {
+            'dataset_name': bundle.config.name,
             'type': 'single_layer',
-            'input_channels': 1,
-            'input_size': 28,
-            'input_dim': input_dim,
-            'output_dim': output_dim,
-            'weights': weights.flatten().tolist(),      # 7840个权重值
-            'bias': bias.tolist(),                       # 10个偏置值
-            'weights_shape': (output_dim, input_dim),    # (10, 784)
-            'bias_shape': (output_dim,),                 # (10,)
-            'description': '单层CNN（展平后）- 完全符合要求'
-        },
-        'history_summary': history
-    }
-    
-    # 保存完整版
-    filepath = os.path.join(MODEL_SAVE_DIR, f'cnn_flattened_{timestamp}.pkl')
-    with open(filepath, 'wb') as f:
-        pickle.dump(config, f)
-    print(f"✅ 单层CNN保存: {filepath}")
-    print(f"   权重数量: {len(config['architecture']['weights'])}")
-    print(f"   偏置数量: {len(config['architecture']['bias'])}")
-    
-    # 同时保存一个简化版用于快速测试（只保留前100个权重）
-    simple_weights = weights.flatten().tolist()[:100]
-    simple_bias = bias.tolist()[:5]  # 只保留前5个偏置
-    
-    simple_config = {
-        'model_name': 'cnn_single_layer_test',
-        'timestamp': timestamp,
-        'test_accuracy': 0.88,
-        'architecture': {
-            'type': 'single_layer',
-            'input_dim': input_dim,
-            'output_dim': output_dim,
-            'weights': simple_weights,
-            'bias': simple_bias,
-            'weights_shape': (output_dim, input_dim),
-            'bias_shape': (output_dim,),
-            'description': '简化版用于快速测试'
-        },
-        'history_summary': {'note': '简化版，仅用于测试加载功能'}
-    }
-    
-    test_filepath = os.path.join(MODEL_SAVE_DIR, f'cnn_test_{timestamp}.pkl')
-    with open(test_filepath, 'wb') as f:
-        pickle.dump(simple_config, f)
-    print(f"✅ 简化测试版保存: {test_filepath}")
-    
-    return filepath, test_filepath
-
-
-def train_mlp_model():
-    """
-    训练MLP模型 - 但加密时会转换为单层
-    784 -> 128 -> 64 -> 10
-    """
-    print("\n" + "="*60)
-    print("训练MLP模型 (将转换为单层)")
-    print("="*60)
-    
-    np.random.seed(43)
-    
-    input_dim = 784
-    hidden1 = 128
-    hidden2 = 64
-    output_dim = 10
-    
-    # 随机初始化权重
-    weights1 = np.random.randn(hidden1, input_dim) * 0.1
-    bias1 = np.random.randn(hidden1) * 0.1
-    weights2 = np.random.randn(hidden2, hidden1) * 0.1
-    bias2 = np.random.randn(hidden2) * 0.1
-    weights3 = np.random.randn(output_dim, hidden2) * 0.1
-    bias3 = np.random.randn(output_dim) * 0.1
-    
-    # 计算组合后的单层等效权重
-    # W_combined = W3 @ W2 @ W1
-    combined_12 = weights2 @ weights1
-    combined_all = weights3 @ combined_12
-    combined_bias = bias3 + weights3 @ (bias2 + weights2 @ bias1)
-    
-    history = {
-        'train_loss': [0.6, 0.4, 0.25, 0.18, 0.12],
-        'train_acc': [0.75, 0.82, 0.88, 0.91, 0.94],
-        'val_loss': [0.55, 0.42, 0.3, 0.22, 0.16],
-        'val_acc': [0.77, 0.83, 0.87, 0.9, 0.92]
-    }
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    config = {
-        'model_name': 'mlp_3layer',
-        'timestamp': timestamp,
-        'test_accuracy': 0.92,
-        'architecture': {
-            'type': 'mlp',
-            'input_dim': input_dim,
-            'output_dim': output_dim,
-            'hidden_dims': [hidden1, hidden2],
-            'combined_weights': combined_all.flatten().tolist(),  # 单层等效权重
-            'combined_bias': combined_bias.tolist(),               # 单层等效偏置
-            'weights_shape': (output_dim, input_dim),
-            'bias_shape': (output_dim,)
-        },
-        'history_summary': history
-    }
-    
-    filepath = os.path.join(MODEL_SAVE_DIR, f'mlp_{timestamp}.pkl')
-    with open(filepath, 'wb') as f:
-        pickle.dump(config, f)
-    print(f"✅ MLP模型保存: {filepath}")
-    print(f"   将作为单层网络使用")
-    
-    return filepath
-
-
-def train_svm_model():
-    """
-    训练SVM模型 - 作为单层网络
-    """
-    print("\n" + "="*60)
-    print("训练SVM模型 (作为单层网络)")
-    print("="*60)
-    
-    np.random.seed(44)
-    
-    input_dim = 784
-    n_classes = 10
-    
-    # SVM可以看作单层网络: y = sign(Wx + b)
-    weights = np.random.randn(n_classes, input_dim) * 0.05
-    bias = np.random.randn(n_classes) * 0.05
-    
-    history = {
-        'train_acc': 0.88,
-        'val_acc': 0.86,
-        'n_support': 156
-    }
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    config = {
-        'model_name': 'svm_linear',
-        'timestamp': timestamp,
-        'test_accuracy': 0.86,
-        'architecture': {
-            'type': 'svm',
-            'kernel': 'linear',
-            'input_dim': input_dim,
-            'output_dim': n_classes,
+            'input_dim': bundle.config.input_dim,
+            'output_dim': bundle.config.num_classes,
             'weights': weights.flatten().tolist(),
             'bias': bias.tolist(),
-            'weights_shape': (n_classes, input_dim),
-            'bias_shape': (n_classes,)
+            'weights_shape': (bundle.config.num_classes, bundle.config.input_dim),
+            'bias_shape': (bundle.config.num_classes,),
+            'description': f'真实训练的单层线性 {bundle.config.name} 分类器',
         },
-        'history_summary': history
+        'history_summary': history,
     }
-    
-    filepath = os.path.join(MODEL_SAVE_DIR, f'svm_{timestamp}.pkl')
-    with open(filepath, 'wb') as f:
-        pickle.dump(config, f)
-    print(f"✅ SVM模型保存: {filepath}")
-    
-    return filepath
+    return save_pickle(config, 'cnn_flattened', bundle.config.name)
+
+
+
+def save_dot_model(model: DotBinaryClassifier,
+                   history: Dict[str, List[float]],
+                   test_accuracy: float,
+                   bundle: DatasetBundle,
+                   timestamp: str) -> str:
+    weights = model.linear.weight.detach().cpu().numpy().reshape(-1)
+    config = {
+        'dataset_name': bundle.config.name,
+        'model_name': 'dot_binary_classifier',
+        'timestamp': timestamp,
+        'test_accuracy': test_accuracy,
+        'architecture': {
+            'dataset_name': bundle.config.name,
+            'type': 'dot_product',
+            'input_dim': bundle.config.input_dim,
+            'weights': weights.tolist(),
+            'target_class': bundle.config.target_class,
+            'description': f'真实训练的点积模型，class {bundle.config.target_class} vs rest',
+        },
+        'history_summary': history,
+    }
+    return save_pickle(config, 'dot', bundle.config.name)
+
+
+
+def save_decision_tree_model(model: Dict,
+                             test_accuracy: float,
+                             bundle: DatasetBundle,
+                             timestamp: str) -> str:
+    config = {
+        'dataset_name': bundle.config.name,
+        'model_name': 'decision_tree_stump',
+        'timestamp': timestamp,
+        'test_accuracy': test_accuracy,
+        'architecture': model,
+        'history_summary': {
+            'note': '真实训练的二分类决策树桩',
+            'target_class': bundle.config.target_class,
+        },
+    }
+    return save_pickle(config, 'decision_tree', bundle.config.name)
+
 
 
 def list_saved_models():
-    """列出所有保存的模型"""
-    print("\n" + "="*60)
-    print("📋 已保存的模型文件")
-    print("="*60)
-    
-    model_files = [f for f in os.listdir(MODEL_SAVE_DIR) if f.endswith('.pkl')]
-    
+    print('\n' + '=' * 60)
+    print('已保存的模型文件')
+    print('=' * 60)
+
+    model_files = [name for name in os.listdir(MODEL_SAVE_DIR) if name.endswith('.pkl')]
     if not model_files:
-        print("   没有找到模型文件")
+        print('   没有找到模型文件')
         return
-    
-    for i, f in enumerate(sorted(model_files)):
-        filepath = os.path.join(MODEL_SAVE_DIR, f)
-        size = os.path.getsize(filepath) / 1024  # KB
-        print(f"   {i+1}. {f} ({size:.1f} KB)")
+
+    for index, filename in enumerate(sorted(model_files), start=1):
+        filepath = os.path.join(MODEL_SAVE_DIR, filename)
+        size_kb = os.path.getsize(filepath) / 1024
+        print(f'   {index}. {filename} ({size_kb:.1f} KB)')
 
 
-if __name__ == "__main__":
-    print("="*80)
-    print("🔧 模型训练脚本启动")
-    print("="*80)
-    
-    # 训练所有模型
-    cnn_files = train_cnn_single_flattened()
-    mlp_file = train_mlp_model()
-    svm_file = train_svm_model()
-    
-    # 列出所有保存的模型
+
+def train_dataset_models(dataset_name: str, data_dir: str) -> List[str]:
+    bundle = build_dataset_bundle(dataset_name, data_dir)
+    neural_model, neural_history, neural_acc = train_neural_network(bundle)
+    dot_model, dot_history, dot_acc = train_dot_model(bundle)
+    decision_tree_model, decision_tree_acc = train_decision_tree_stump(bundle)
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return [
+        save_neural_network_model(neural_model, neural_history, neural_acc, bundle, timestamp),
+        save_dot_model(dot_model, dot_history, dot_acc, bundle, timestamp),
+        save_decision_tree_model(decision_tree_model, decision_tree_acc, bundle, timestamp),
+    ]
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Train real experiment models for supported datasets.')
+    parser.add_argument('--dataset', choices=['mnist', 'uci_har', 'all'], default='mnist', help='Dataset to train on')
+    parser.add_argument('--data-dir', default='data', help='Dataset cache directory')
+    args = parser.parse_args()
+
+    print('=' * 80)
+    print('真实模型训练脚本启动')
+    print('=' * 80)
+    print(f'模型保存目录: {MODEL_SAVE_DIR}')
+    print(f'运行设备: {DEVICE}')
+
+    set_seed()
+    dataset_names = ['mnist', 'uci_har'] if args.dataset == 'all' else [args.dataset]
+    saved_paths: List[str] = []
+    for dataset_name in dataset_names:
+        print('\n' + '#' * 72)
+        print(f'训练数据集: {dataset_name}')
+        print('#' * 72)
+        saved_paths.extend(train_dataset_models(dataset_name, args.data_dir))
+
+    print('\n' + '=' * 80)
+    print('真实模型训练完成')
+    print('=' * 80)
+    for path in saved_paths:
+        print(f'   {path}')
     list_saved_models()
-    
-    print("\n" + "="*80)
-    print("✅ 所有模型训练完成")
-    print(f"   模型保存目录: {MODEL_SAVE_DIR}")
-    print("   包含模型类型:")
-    print("   - CNN (单层展平版) - 主要测试用")
-    print("   - MLP (将转换为单层)")
-    print("   - SVM (作为单层网络)")
-    print("="*80)
+
+
+if __name__ == '__main__':
+    main()

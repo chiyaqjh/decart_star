@@ -741,15 +741,43 @@ class DeCartSystem:
         print(f"\n[Query Decision Tree] 执行加密决策树查询")
         
         results = []
+        internal_map = {}
+        for node in encrypted_tree.get('internal_nodes', []):
+            feature_idx = int(node.get('feature_idx', 0))
+            threshold = 0.0
+            try:
+                threshold_plain = self.he.decrypt(node['threshold'])
+                if isinstance(threshold_plain, list):
+                    threshold = float(threshold_plain[0]) if threshold_plain else 0.0
+                else:
+                    threshold = float(threshold_plain)
+            except Exception:
+                threshold = 0.0
+
+            internal_map[node['node_id']] = {
+                'feature_idx': feature_idx,
+                'threshold': threshold,
+                'left': node['left'],
+                'right': node['right'],
+            }
+
+        leaf_map = {}
+        for node in encrypted_tree.get('leaf_nodes', []):
+            pred_plain = 0.0
+            try:
+                dec_leaf = self.he.decrypt(node['value'])
+                if isinstance(dec_leaf, list):
+                    pred_plain = float(dec_leaf[0]) if dec_leaf else 0.0
+                else:
+                    pred_plain = float(dec_leaf)
+            except Exception:
+                pred_plain = 0.0
+            leaf_map[node['node_id']] = pred_plain
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
                 # 从根节点开始，使用统一简单树逻辑进行遍历
                 current_node_id = encrypted_tree['root_id']
-
-                # 查找节点映射
-                internal_map = {n['node_id']: n for n in encrypted_tree['internal_nodes']}
-                leaf_map = {n['node_id']: n for n in encrypted_tree['leaf_nodes']}
 
                 # 解密输入记录，用第 feature_idx 个特征做阈值判断
                 record_plain = self.he.decrypt(encrypted_record)
@@ -763,13 +791,8 @@ class DeCartSystem:
                 while current_node_id in internal_map and depth < max_depth:
                     node = internal_map[current_node_id]
 
-                    feature_idx = int(node.get('feature_idx', 0))
-                    threshold_ct = node['threshold']
-                    threshold_plain = self.he.decrypt(threshold_ct)
-                    if isinstance(threshold_plain, list):
-                        threshold = float(threshold_plain[0]) if threshold_plain else 0.0
-                    else:
-                        threshold = float(threshold_plain)
+                    feature_idx = node['feature_idx']
+                    threshold = node['threshold']
 
                     feature_value = float(record_plain[feature_idx]) if feature_idx < len(record_plain) else 0.0
 
@@ -782,17 +805,7 @@ class DeCartSystem:
                 
                 # 到达叶子节点
                 if current_node_id in leaf_map:
-                    leaf = leaf_map[current_node_id]
-                    # 统一口径：每条记录都生成新的结果密文
-                    pred_plain = 0.0
-                    try:
-                        dec_leaf = self.he.decrypt(leaf['value'])
-                        if isinstance(dec_leaf, list):
-                            pred_plain = float(dec_leaf[0]) if dec_leaf else 0.0
-                        else:
-                            pred_plain = float(dec_leaf)
-                    except Exception:
-                        pred_plain = 0.0
+                    pred_plain = leaf_map[current_node_id]
                     results.append(self.he.encrypt([pred_plain]))
                 else:
                     # 如果没找到叶子，使用默认值
