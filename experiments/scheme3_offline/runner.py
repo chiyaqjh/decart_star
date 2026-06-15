@@ -24,6 +24,7 @@ if project_root not in sys.path:
 from config import Config
 from experiments.datasets import get_dataset_spec, load_experiment_records
 from experiments.models.model_loader import load_trained_experiment_model
+from experiments.shared_synthetic import generate_synthetic_decision_tree, generate_synthetic_dot_model, generate_synthetic_records, generate_synthetic_shallow_mlp
 from experiments.result_paths import resolve_results_dir
 from experiments.scheme3_offline.wrapper import OfflineSchemeExperimentWrapper
 
@@ -115,24 +116,15 @@ class ExperimentRunner:
         if config.save_results:
             os.makedirs(config.results_dir, exist_ok=True)
     
-    def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
+    def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
         """生成测试数据"""
         if self.config.dataset != 'synthetic':
             print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
             return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
 
-        data = []
-        for _ in range(self.config.num_records):
-            record = np.random.randn(self.config.record_dim).tolist()
-            # 归一化到 [-1, 1] 范围内
-            max_val = max(abs(min(record)), abs(max(record)))
-            if max_val > 0:
-                record = [x / max_val for x in record]
-            data.append(record)
-        
-        return data, []
+        return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
     
-    def generate_model(self, model_type: str) -> Any:
+    def generate_model(self, model_type: str, run_id: int = 0) -> Any:
         """根据模型类型生成模型"""
         if self.config.model_source == 'trained':
             print(f"   加载训练好的 {model_type} 模型...")
@@ -141,43 +133,18 @@ class ExperimentRunner:
         if model_type == 'dot':
             # 点积模型
             print(f"   生成点积模型...")
-            model = np.random.randn(self.config.record_dim).tolist()
-            max_val = max(abs(min(model)), abs(max(model))) or 1
-            model = [x / max_val for x in model]
-            return model
+            return generate_synthetic_dot_model(self.config.record_dim, run_id)
         
         elif model_type == 'decision_tree':
             # 决策树模型
             print(f"   生成决策树模型...")
-            return {
-                'type': 'decision_tree',
-                'root': 0,
-                'nodes': [
-                    {'id': 0, 'feature': 0, 'threshold': 0.5, 'left': 1, 'right': 2},
-                    {'id': 1, 'value': 0.0},
-                    {'id': 2, 'value': 1.0}
-                ]
-            }
+            return generate_synthetic_decision_tree()
         
         elif model_type == 'neural_network':
             # 神经网络模型
             print(f"   生成神经网络模型...")
             
-            output_dim = 10
-            input_dim = self.config.record_dim
-            
-            # 生成权重矩阵
-            weights_matrix = np.random.randn(output_dim, input_dim) * 0.1
-            bias = np.random.randn(output_dim) * 0.1
-            weights = weights_matrix.flatten().tolist()
-            
-            return {
-                'type': 'neural_network',
-                'input_dim': input_dim,
-                'output_dim': output_dim,
-                'weights': weights,
-                'bias': bias.tolist()
-            }
+            return generate_synthetic_shallow_mlp(self.config.record_dim, run_id)
         
         else:
             raise ValueError(f"未知模型类型: {model_type}")
@@ -220,24 +187,38 @@ class ExperimentRunner:
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             
             # 生成测试数据
-            data, _ = self.generate_test_data()
+            data, _ = self.generate_test_data(run_id)
             
             # 生成模型
-            model = self.generate_model(model_type)
+            model = self.generate_model(model_type, run_id)
             
             # 加密数据集
             print(f"\n 加密数据集...")
             C_m, sk_h_s, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
+
+            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') else None
             
             # 执行查询
             print(f"\n 执行查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
             results = None
             total_results = 0
-            for _ in range(query_repetitions):
-                current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+            for query_index in range(query_repetitions):
+                query_label = f"[Query {query_index + 1}/{query_repetitions}]"
+                print(f"   {query_label} Offline query start, querier={active_querier_id}")
+                current_results = wrapper.execute_query(
+                    active_querier_id,
+                    owner_id,
+                    ds_id,
+                    model,
+                    prepared_model=prepared_model,
+                    progress_label=query_label,
+                )
                 if current_results is not None:
                     results = current_results
                     total_results += len(current_results)
+                    print(f"   {query_label} Offline query done, results={len(current_results)}")
+                else:
+                    print(f"   {query_label} Offline query done, no results returned")
             
             # 收集指标
             metrics = wrapper.get_metrics()

@@ -21,6 +21,7 @@ if project_root not in sys.path:
 from config import Config
 from experiments.datasets import get_dataset_spec, load_experiment_records
 from experiments.models.model_loader import load_trained_experiment_model
+from experiments.shared_synthetic import generate_synthetic_decision_tree, generate_synthetic_records
 from experiments.result_paths import resolve_results_dir
 from experiments.secpq.wrapper import SecPQExperimentWrapper
 
@@ -117,35 +118,20 @@ class ExperimentRunner:
         end = '\n' if current >= total else '\r'
         print(f"{label} [{bar}] {current}/{total}", end=end, flush=True)
 
-    def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
+    def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
         if self.config.dataset != 'synthetic':
             print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
             return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
 
-        data = []
-        for _ in range(self.config.num_records):
-            record = np.random.randn(self.config.record_dim).tolist()
-            max_val = max(abs(min(record)), abs(max(record)))
-            if max_val > 0:
-                record = [x / max_val for x in record]
-            data.append(record)
-        return data, []
+        return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
 
-    def generate_model(self, model_type: str) -> Any:
+    def generate_model(self, model_type: str, run_id: int = 0) -> Any:
         if self.config.model_source == 'trained':
             print(f"   加载训练好的 {model_type} 模型...")
             return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
 
         if model_type == 'decision_tree':
-            return {
-                'type': 'decision_tree',
-                'root': 0,
-                'nodes': [
-                    {'id': 0, 'feature': 0, 'threshold': 0.5, 'left': 1, 'right': 2},
-                    {'id': 1, 'value': 0.0},
-                    {'id': 2, 'value': 1.0}
-                ]
-            }
+            return generate_synthetic_decision_tree()
 
         raise ValueError(f"SecPQ 仅支持 decision_tree，收到模型类型: {model_type}")
 
@@ -181,17 +167,19 @@ class ExperimentRunner:
             self.register_all_users(wrapper, policy)
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
 
-            data, _ = self.generate_test_data()
-            model = self.generate_model(model_type)
+            data, _ = self.generate_test_data(run_id)
+            model = self.generate_model(model_type, run_id)
 
             print("\n 加密数据集...")
             _, _, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
+
+            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') else None
 
             print(f"\n 执行查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
             results = None
             total_results = 0
             for index in range(1, query_repetitions + 1):
-                current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model, prepared_model=prepared_model)
                 if current_results is not None:
                     results = current_results
                     total_results += len(current_results)

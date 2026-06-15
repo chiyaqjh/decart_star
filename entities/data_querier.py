@@ -387,58 +387,76 @@ class DataQuerier:
             print(f"   加密{model_type}模型 (字典)")
             
             if model_type == 'neural_network':
-                # 神经网络模型
-                weights = model.get('weights', [])
-                bias = model.get('bias', [])
-                input_dim = model.get('input_dim', 784)
-                output_dim = model.get('output_dim', 10)
+                # 神经网络模型：同时支持旧单层格式和新 layers 格式。
+                raw_layers = model.get('layers') or [{
+                    'layer_idx': 0,
+                    'layer_type': 'linear',
+                    'activation': model.get('activation', 'linear'),
+                    'weights': model.get('weights', []),
+                    'bias': model.get('bias', []),
+                    'weights_shape': (
+                        int(model.get('output_dim', 10) or 10),
+                        int(model.get('input_dim', 784) or 784),
+                    ),
+                    'bias_shape': (int(model.get('output_dim', 10) or 10),),
+                }]
 
-                # 按行打包权重，避免大维度模型生成过多单元素密文导致 bad allocation。
-                encrypted_weight_rows = []
-                for row_idx in range(output_dim):
-                    row_start = row_idx * input_dim
-                    row_end = row_start + input_dim
-                    weight_row = [float(value) for value in weights[row_start:row_end]]
-                    if len(weight_row) < input_dim:
-                        weight_row.extend([0.0] * (input_dim - len(weight_row)))
-                    try:
-                        encrypted_row = system_he.encrypt(weight_row)
-                        encrypted_weight_rows.append(encrypted_row)
-                    except Exception as e:
-                        print(f"     第{row_idx}行权重加密失败: {e}")
-                        encrypted_weight_rows.append(None)
+                encrypted_layers = []
+                for layer in raw_layers:
+                    weights = layer.get('weights', [])
+                    bias = layer.get('bias', [])
+                    weights_shape = tuple(layer.get('weights_shape', (0, 0)))
+                    output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else int(layer.get('output_dim', 0) or 0)
+                    input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else int(layer.get('input_dim', 0) or 0)
 
-                encrypted_bias_vector = None
-                try:
-                    encrypted_bias_vector = system_he.encrypt([float(value) for value in bias])
-                except Exception as e:
-                    print(f"     偏置向量加密失败: {e}")
-
-                # 兼容旧查询路径：仍然保留字段名，但优先使用打包表示。
-                encrypted_bias = []
-                if encrypted_bias_vector is None:
-                    for b in bias:
+                    encrypted_weight_rows = []
+                    for row_idx in range(output_dim):
+                        row_start = row_idx * input_dim
+                        row_end = row_start + input_dim
+                        weight_row = [float(value) for value in weights[row_start:row_end]]
+                        if len(weight_row) < input_dim:
+                            weight_row.extend([0.0] * (input_dim - len(weight_row)))
                         try:
-                            encrypted_b = system_he.encrypt([float(b)])
-                            encrypted_bias.append(encrypted_b)
+                            encrypted_row = system_he.encrypt(weight_row)
+                            encrypted_weight_rows.append(encrypted_row)
                         except Exception as e:
-                            print(f"     偏置加密失败: {e}")
-                            encrypted_bias.append(None)
-                
-                encrypted_model = {
-                    'type': 'neural_network',
-                    'layer_count': 1,
-                    'layers': [{
-                        'layer_idx': 0,
-                        'layer_type': 'linear',
-                        'activation': 'linear',
+                            print(f"     第{layer.get('layer_idx', 0)}层第{row_idx}行权重加密失败: {e}")
+                            encrypted_weight_rows.append(None)
+
+                    encrypted_bias_vector = None
+                    bias_values = [float(value) for value in bias]
+                    if bias_values:
+                        try:
+                            encrypted_bias_vector = system_he.encrypt(bias_values)
+                        except Exception as e:
+                            print(f"     第{layer.get('layer_idx', 0)}层偏置向量加密失败: {e}")
+
+                    encrypted_bias = []
+                    if encrypted_bias_vector is None:
+                        for b in bias_values:
+                            try:
+                                encrypted_b = system_he.encrypt([float(b)])
+                                encrypted_bias.append(encrypted_b)
+                            except Exception as e:
+                                print(f"     第{layer.get('layer_idx', 0)}层偏置加密失败: {e}")
+                                encrypted_bias.append(None)
+
+                    encrypted_layers.append({
+                        'layer_idx': layer.get('layer_idx', len(encrypted_layers)),
+                        'layer_type': layer.get('layer_type', 'linear'),
+                        'activation': layer.get('activation', 'linear'),
                         'weights_shape': (output_dim, input_dim),
-                        'bias_shape': (output_dim,),
+                        'bias_shape': tuple(layer.get('bias_shape', (output_dim,))),
                         'encrypted_weights': [],
                         'encrypted_bias': encrypted_bias,
                         'encrypted_weight_rows': encrypted_weight_rows,
                         'encrypted_bias_vector': encrypted_bias_vector
-                    }]
+                    })
+
+                encrypted_model = {
+                    'type': 'neural_network',
+                    'layer_count': len(encrypted_layers),
+                    'layers': encrypted_layers
                 }
                 C_M['encrypted_model'] = encrypted_model
                 C_M['model_type'] = 'neural_network'
@@ -505,69 +523,87 @@ class DataQuerier:
         
         # 根据模型类型构建加密模型
         if model_info['model_type'] in ['cnn', 'cnn_test', 'mlp', 'svm']:
-            # 所有模型都作为单层网络处理
-            weights = architecture.get('weights', [])
-            bias = architecture.get('bias', [])
-            
-            # 对于MLP，使用组合后的权重
-            if 'combined_weights' in architecture:
-                weights = architecture['combined_weights']
-                bias = architecture['combined_bias']
-            
-            input_dim = architecture.get('input_dim', 784)
-            output_dim = architecture.get('output_dim', 10)
-            
-            print(f"   模型架构: {input_dim} -> {output_dim}")
-            print(f"   权重数量: {len(weights)}")
-            print(f"   偏置数量: {len(bias)}")
-            
-            # 预训练模型同样需要复用系统HE上下文，避免查询阶段解密失真。
-            system_he = self.key_curator.system.he
-            
-            encrypted_weight_rows = []
-            for row_idx in range(output_dim):
-                row_start = row_idx * input_dim
-                row_end = row_start + input_dim
-                weight_row = [float(value) for value in weights[row_start:row_end]]
-                if len(weight_row) < input_dim:
-                    weight_row.extend([0.0] * (input_dim - len(weight_row)))
-                try:
-                    encrypted_row = system_he.encrypt(weight_row)
-                    encrypted_weight_rows.append(encrypted_row)
-                except Exception as e:
-                    print(f"     第{row_idx}行权重加密失败: {e}")
-                    encrypted_weight_rows.append(None)
-
-            encrypted_bias_vector = None
-            try:
-                encrypted_bias_vector = system_he.encrypt([float(value) for value in bias])
-            except Exception as e:
-                print(f"     偏置向量加密失败: {e}")
-
-            encrypted_bias = []
-            if encrypted_bias_vector is None:
-                for b in bias:
-                    try:
-                        encrypted_b = system_he.encrypt([float(b)])
-                        encrypted_bias.append(encrypted_b)
-                    except Exception as e:
-                        print(f"     偏置加密失败: {e}")
-                        encrypted_bias.append(None)
-            
-            encrypted_model = {
-                'type': 'neural_network',
-                'layer_count': 1,
-                'layers': [{
+            raw_layers = architecture.get('layers')
+            if raw_layers:
+                print(f"   模型架构: 多层网络，共 {len(raw_layers)} 层")
+            else:
+                weights = architecture.get('weights', [])
+                bias = architecture.get('bias', [])
+                if 'combined_weights' in architecture:
+                    weights = architecture['combined_weights']
+                    bias = architecture['combined_bias']
+                input_dim = architecture.get('input_dim', 784)
+                output_dim = architecture.get('output_dim', 10)
+                print(f"   模型架构: {input_dim} -> {output_dim}")
+                print(f"   权重数量: {len(weights)}")
+                print(f"   偏置数量: {len(bias)}")
+                raw_layers = [{
                     'layer_idx': 0,
                     'layer_type': 'linear',
-                    'activation': 'linear',
+                    'activation': architecture.get('activation', 'linear'),
+                    'weights': weights,
+                    'bias': bias,
+                    'weights_shape': tuple(architecture.get('weights_shape', (output_dim, input_dim))),
+                    'bias_shape': tuple(architecture.get('bias_shape', (output_dim,))),
+                }]
+
+            system_he = self.key_curator.system.he
+            encrypted_layers = []
+            for layer in raw_layers:
+                weights = layer.get('weights', [])
+                bias = layer.get('bias', [])
+                weights_shape = tuple(layer.get('weights_shape', (0, 0)))
+                output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else int(layer.get('output_dim', 0) or 0)
+                input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else int(layer.get('input_dim', 0) or 0)
+
+                encrypted_weight_rows = []
+                for row_idx in range(output_dim):
+                    row_start = row_idx * input_dim
+                    row_end = row_start + input_dim
+                    weight_row = [float(value) for value in weights[row_start:row_end]]
+                    if len(weight_row) < input_dim:
+                        weight_row.extend([0.0] * (input_dim - len(weight_row)))
+                    try:
+                        encrypted_row = system_he.encrypt(weight_row)
+                        encrypted_weight_rows.append(encrypted_row)
+                    except Exception as e:
+                        print(f"     第{layer.get('layer_idx', 0)}层第{row_idx}行权重加密失败: {e}")
+                        encrypted_weight_rows.append(None)
+
+                encrypted_bias_vector = None
+                bias_values = [float(value) for value in bias]
+                if bias_values:
+                    try:
+                        encrypted_bias_vector = system_he.encrypt(bias_values)
+                    except Exception as e:
+                        print(f"     第{layer.get('layer_idx', 0)}层偏置向量加密失败: {e}")
+
+                encrypted_bias = []
+                if encrypted_bias_vector is None:
+                    for b in bias_values:
+                        try:
+                            encrypted_b = system_he.encrypt([float(b)])
+                            encrypted_bias.append(encrypted_b)
+                        except Exception as e:
+                            print(f"     第{layer.get('layer_idx', 0)}层偏置加密失败: {e}")
+                            encrypted_bias.append(None)
+
+                encrypted_layers.append({
+                    'layer_idx': layer.get('layer_idx', len(encrypted_layers)),
+                    'layer_type': layer.get('layer_type', 'linear'),
+                    'activation': layer.get('activation', 'linear'),
                     'weights_shape': (output_dim, input_dim),
-                    'bias_shape': (output_dim,),
+                    'bias_shape': tuple(layer.get('bias_shape', (output_dim,))),
                     'encrypted_weights': [],
                     'encrypted_bias': encrypted_bias,
                     'encrypted_weight_rows': encrypted_weight_rows,
                     'encrypted_bias_vector': encrypted_bias_vector
-                }]
+                })
+
+            encrypted_model = {
+                'type': 'neural_network',
+                'layer_count': len(encrypted_layers),
+                'layers': encrypted_layers
             }
             
             C_M['encrypted_model'] = encrypted_model
@@ -579,8 +615,9 @@ class DataQuerier:
             self.encrypted_models[enc_id] = encrypted_model
             
             print(f"     加密模型准备完成")
-            print(f"      加密权重数: {len([w for w in encrypted_weights if w])}")
-            print(f"      加密偏置数: {len([b for b in encrypted_bias if b])}")
+            print(f"      加密层数: {len(encrypted_layers)}")
+            print(f"      有效权重行数: {sum(len([w for w in layer.get('encrypted_weight_rows', []) if w]) for layer in encrypted_layers)}")
+            print(f"      有效偏置数: {sum(len([b for b in layer.get('encrypted_bias', []) if b]) for layer in encrypted_layers)}")
             
             return C_M
         else:

@@ -19,6 +19,10 @@ if project_root not in sys.path:
 
 #  wrapper
 from config import Config
+from experiments.datasets import get_dataset_spec, load_experiment_records
+from experiments.models.model_loader import load_trained_experiment_model
+from experiments.shared_synthetic import generate_synthetic_decision_tree, generate_synthetic_dot_model, generate_synthetic_records, generate_synthetic_shallow_mlp
+from experiments.result_paths import resolve_results_dir
 from experiments.our_decart_star.wrapper import DeCartStarExperimentWrapper
 
 
@@ -32,6 +36,10 @@ class ExperimentConfig:
     # 
     num_records: int = Config.EXPERIMENT_NUM_RECORDS  # ?
     record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 
+    dataset: str = 'synthetic'
+    mnist_data_dir: str = 'data'
+    model_source: str = 'synthetic'
+    trained_models_dir: str = 'experiments/models/trained'
     
     # 
     model_types: List[str] = None  # 
@@ -43,13 +51,21 @@ class ExperimentConfig:
     # 
     num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 
     save_results: bool = True
-    results_dir: str = "experiments/results/our_decart_star"
+    results_dir: Optional[str] = None
     
     def __post_init__(self):
         if self.model_types is None:
             self.model_types = ['dot', 'decision_tree', 'neural_network']
         if self.num_queriers < 1:
             raise ValueError('num_queriers ?1')
+        if self.dataset not in {'synthetic', 'mnist', 'uci_har'}:
+            raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
+        dataset_spec = get_dataset_spec(self.dataset)
+        if dataset_spec is not None and self.record_dim != dataset_spec['input_dim']:
+            raise ValueError(f"{self.dataset} experiments require record_dim={dataset_spec['input_dim']}")
+        if self.model_source not in {'synthetic', 'trained'}:
+            raise ValueError("model_source must be 'synthetic' or 'trained'")
+        self.results_dir = resolve_results_dir(self.dataset, "experiments/results/our_decart_star", "our_decart_star", self.results_dir)
 
 
 class ExperimentRunner:
@@ -99,99 +115,43 @@ class ExperimentRunner:
         if config.save_results:
             os.makedirs(config.results_dir, exist_ok=True)
     
-    def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
-        """Generate normalized random records and an empty policy placeholder."""
-        data = []
-        for _ in range(self.config.num_records):
-            record = np.random.randn(self.config.record_dim).tolist()
-            #  [-1, 1] ?
-            max_val = max(abs(min(record)), abs(max(record)))
-            if max_val > 0:
-                record = [x / max_val for x in record]
-            data.append(record)
-        
-        return data, []
+    def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
+        """Generate records from the configured data source."""
+        if self.config.dataset != 'synthetic':
+            print(f"\nLoading {self.config.dataset} test samples from {self.config.mnist_data_dir}...")
+            data, labels = load_experiment_records(
+                self.config.dataset,
+                self.config.num_records,
+                data_dir=self.config.mnist_data_dir,
+                split='test',
+            )
+            print(f"   Loaded {len(data)} {self.config.dataset} records with dimension {len(data[0])}")
+            return data, labels
+
+        return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
     
-    def generate_model(self, model_type: str) -> Any:
+    def generate_model(self, model_type: str, run_id: int = 0) -> Any:
         """Generate a synthetic model for the requested model type."""
+        if self.config.model_source == 'trained':
+            print(f"   Loading trained {model_type} model...")
+            return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
         
         if model_type == 'dot':
             #  - ?
             print(f"   ...")
-            model = np.random.randn(self.config.record_dim).tolist()
-            # ?
-            max_val = max(abs(min(model)), abs(max(model))) or 1
-            model = [x / max_val for x in model]
-            return model
+            return generate_synthetic_dot_model(self.config.record_dim, run_id)
         
         elif model_type == 'decision_tree':
             # ?- 
             print(f"   Generating decision tree model...")
-            try:
-                from schemes.ai_model import DecisionTreeHE, DecisionTreeNode
-                tree = DecisionTreeHE()
-                
-                # 
-                root = DecisionTreeNode(0)
-                root.feature_idx = 0
-                root.threshold = 0.5
-                root.left_child = 1
-                root.right_child = 2
-                tree.add_node(root)
-                
-                left = DecisionTreeNode(1, is_leaf=True)
-                left.value = 0.0
-                tree.add_node(left)
-                
-                right = DecisionTreeNode(2, is_leaf=True)
-                right.value = 1.0
-                tree.add_node(right)
-                tree.set_root(0)
-                
-                print(f"     Decision tree nodes: {len(tree.nodes)}")
-                return tree
-            except ImportError as e:
-                print(f"     Falling back to dict decision tree format: {e}")
-                # ?
-                return {
-                    'type': 'decision_tree',
-                    'format': 'dict',
-                    'root': 0,
-                    'nodes': [
-                        {'id': 0, 'feature': 0, 'threshold': 0.5, 'left': 1, 'right': 2, 'is_leaf': False},
-                        {'id': 1, 'value': 0.0, 'is_leaf': True},
-                        {'id': 2, 'value': 1.0, 'is_leaf': True}
-                    ]
-                }
+            return generate_synthetic_decision_tree()
         
         elif model_type == 'neural_network':
             #  - 
             print(f"   ...")
             
-            # ?
-            output_dim = 10
-            input_dim = self.config.record_dim
-            weight_scale = min(0.1, 1.0 / np.sqrt(max(1, input_dim)))
-            
-            #  (output_dim x input_dim)
-            weights_matrix = np.random.randn(output_dim, input_dim) * weight_scale
-            bias = np.random.randn(output_dim) * weight_scale
-            print(f"   NN random init scale: {weight_scale:.6f}")
-            
-            # 
-            weights = weights_matrix.flatten().tolist()
-            
-            # 
-            return {
-                'type': 'neural_network',
-                'format': 'single_layer',
-                'input_dim': input_dim,
-                'output_dim': output_dim,
-                'weights': weights,
-                'bias': bias.tolist(),
-                'weights_shape': (output_dim, input_dim),
-                'bias_shape': (output_dim,)
-            }
+            print("   NN random init scale: deterministic shared synthetic model")
+            return generate_synthetic_shallow_mlp(self.config.record_dim, run_id)
         
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
@@ -239,10 +199,10 @@ class ExperimentRunner:
             wrapper.curator.add_trust(active_querier_id, owner_id)
             
             # 
-            data, _ = self.generate_test_data()
+            data, _ = self.generate_test_data(run_id)
             
             # 
-            model = self.generate_model(model_type)
+            model = self.generate_model(model_type, run_id)
             
             # ?
             print(f"\nEncrypting dataset...")
@@ -250,6 +210,8 @@ class ExperimentRunner:
             
             # ?
             wrapper.store_dataset(owner_id, ds_id, C_m, sk_h_s)
+
+            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') and model_type in {'dot', 'neural_network'} else None
             
             # 
             total_results = 0
@@ -260,11 +222,15 @@ class ExperimentRunner:
                 print(f"\nExecuting dot-product queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
                 for repetition_idx in range(query_repetitions):
-                    print(f"   Dot-product query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
-                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                    query_index = repetition_idx + 1
+                    print(f"   [Query {query_index}/{query_repetitions}] Dot-product query start, querier={active_querier_id}")
+                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model, prepared_model=prepared_model)
                     if current_results is not None:
                         results = current_results
                         total_results += len(current_results)
+                        print(f"   [Query {query_index}/{query_repetitions}] Dot-product query done, results={len(current_results)}")
+                    else:
+                        print(f"   [Query {query_index}/{query_repetitions}] Dot-product query returned no results")
                 
                 query_time = float(np.sum(wrapper.metrics['query_times'])) if wrapper.metrics['query_times'] else 0
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
@@ -274,11 +240,15 @@ class ExperimentRunner:
                 print(f"\nExecuting neural-network queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
                 for repetition_idx in range(query_repetitions):
-                    print(f"   Neural-network query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
-                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                    query_index = repetition_idx + 1
+                    print(f"   [Query {query_index}/{query_repetitions}] Neural-network query start, querier={active_querier_id}")
+                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model, prepared_model=prepared_model)
                     if current_results is not None:
                         results = current_results
                         total_results += len(current_results)
+                        print(f"   [Query {query_index}/{query_repetitions}] Neural-network query done, results={len(current_results)}")
+                    else:
+                        print(f"   [Query {query_index}/{query_repetitions}] Neural-network query returned no results")
                 
                 query_time = float(np.sum(wrapper.metrics['query_times'])) if wrapper.metrics['query_times'] else 0
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
@@ -716,6 +686,10 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="Block size")
     parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="Number of records")
     parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="Record dimension")
+    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="Dataset source")
+    parser.add_argument("--mnist-data-dir", type=str, default="data", help="Directory used to cache MNIST data")
+    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="Model source")
+    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="Directory containing trained model pickle files")
     parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="Access policy size")
     parser.add_argument("--num-queriers", type=int, default=1, help="Number of queriers")
     parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="Number of repeated runs")
@@ -725,7 +699,7 @@ if __name__ == "__main__":
         default=['dot', 'decision_tree', 'neural_network'],
         help="Model types to evaluate",
     )
-    parser.add_argument("--results-dir", type=str, default="experiments/results/our_decart_star", help="Directory for JSON results")
+    parser.add_argument("--results-dir", type=str, default=None, help="Directory for JSON results")
     parser.add_argument("--no-save", action="store_true", help="Skip saving JSON results")
 
     args = parser.parse_args()
@@ -738,6 +712,10 @@ if __name__ == "__main__":
     print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
     print(f"   record-dim: {args.record_dim}")
+    print(f"   dataset: {args.dataset}")
+    print(f"   mnist-data-dir: {args.mnist_data_dir}")
+    print(f"   model-source: {args.model_source}")
+    print(f"   trained-models-dir: {args.trained_models_dir}")
     print(f"   policy-size: {args.policy_size}")
     print(f"   num-queriers: {args.num_queriers}")
     print(f"   num-runs: {args.num_runs}")
@@ -750,6 +728,10 @@ if __name__ == "__main__":
         n=args.n,
         num_records=args.num_records,
         record_dim=args.record_dim,
+        dataset=args.dataset,
+        mnist_data_dir=args.mnist_data_dir,
+        model_source=args.model_source,
+        trained_models_dir=args.trained_models_dir,
         policy_size=args.policy_size,
         num_queriers=args.num_queriers,
         model_types=args.model_types,

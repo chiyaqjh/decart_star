@@ -99,20 +99,20 @@ class DeCartSystem:
     # ========== 新增：默认神经网络创建方法 ==========
     def create_default_neural_network(self, input_dim: int = 784, output_dim: int = 10) -> Any:
         """
-        创建默认的单层神经网络
-        所有神经网络测试都使用这个
+        创建默认的最小单隐层神经网络: input -> 16 -> output。
         """
         try:
-            from schemes.ai_model import NeuralNetworkHE
-            nn = NeuralNetworkHE()
-            nn.add_single_layer(input_dim, output_dim, activation="linear")
-            return nn
-        except ImportError:
+            return NeuralNetworkHE.create_shallow_mlp(
+                input_dim=input_dim,
+                hidden_dim=16,
+                output_dim=output_dim,
+                hidden_activation="square",
+                output_activation="linear",
+            )
+        except Exception:
             print("警告: 无法导入NeuralNetworkHE，使用简化版本")
             return None
-    
-    # ========== Setup 算法 ==========
-    
+
     def setup(self) -> Tuple[Dict, List, List]:
         """
         Setup(λ) → (crs, pp, aux)
@@ -627,39 +627,40 @@ class DeCartSystem:
         # ========== 替换原有的 encrypt_neural_network 方法 ==========
     def encrypt_neural_network(self, nn_model=None, pk_h: Any = None) -> Dict:
         """
-        加密神经网络 - 默认使用单层网络
-        如果 nn_model 为 None，创建默认的单层网络
+        加密神经网络 - 兼容旧单层格式和新两层格式。
         """
-        print(f"\n[Encrypt Neural Network] 加密单层神经网络")
-        
+        print(f"\n[Encrypt Neural Network] 加密神经网络")
+
         if pk_h is None:
             pk_h = self.he.public_key
-        
-        # 如果没有提供模型，创建默认的单层网络
+
         if nn_model is None:
             nn_model = self.create_default_neural_network()
             if nn_model is None:
-                # 如果导入失败，返回一个简单的占位模型
                 return {
                     'type': 'neural_network',
                     'layers': [],
                     'layer_count': 0
                 }
-        elif not hasattr(nn_model, 'get_encryptable_params'):
-            # 如果传入的不是NeuralNetworkHE，也创建默认的
-            print(f"   警告: 转换输入为单层网络")
-            nn_model = self.create_default_neural_network()
-        
-        # 获取可加密参数
-        try:
-            params_list = nn_model.get_encryptable_params()
-        except AttributeError:
-            print(f"   错误: 模型没有 get_encryptable_params 方法")
-            return {
-                'type': 'neural_network',
-                'layers': [],
-                'layer_count': 0
-            }
+
+        if isinstance(nn_model, dict):
+            if nn_model.get('layers'):
+                params_list = list(nn_model.get('layers', []))
+            else:
+                params_list = [nn_model]
+        else:
+            if not hasattr(nn_model, 'get_encryptable_params'):
+                print(f"   警告: 转换输入为默认神经网络")
+                nn_model = self.create_default_neural_network()
+            try:
+                params_list = nn_model.get_encryptable_params()
+            except AttributeError:
+                print(f"   错误: 模型没有 get_encryptable_params 方法")
+                return {
+                    'type': 'neural_network',
+                    'layers': [],
+                    'layer_count': 0
+                }
         
         # 加密每一层
         encrypted_layers = []
@@ -706,7 +707,7 @@ class DeCartSystem:
             'layer_count': len(encrypted_layers)
         }
         
-        print(f"      单层神经网络加密完成")
+        print(f"      神经网络加密完成")
         return encrypted_nn
 
 
@@ -823,133 +824,150 @@ class DeCartSystem:
         print(f"      决策树查询完成，生成 {len(results)} 个结果")
         return results
     
-    # ========== 新增：单层网络查询方法 ==========
+    @staticmethod
+    def _apply_nn_activation(values: List[float], activation: str) -> List[float]:
+        if activation == 'linear':
+            return [float(v) for v in values]
+        return [float(ActivationFunctions.get_he_friendly(activation, float(v))) for v in values]
+
+    # ========== 新增：神经网络查询方法 ==========
     def _query_single_layer_nn(self,
                               encrypted_nn: Dict,
                               encrypted_data: List[Any],
                               sk_h_s: Any) -> List[Any]:
         """
-        单层神经网络查询 - 所有神经网络查询的统一入口
-        只执行一次矩阵乘法: y = Wx + b
+        神经网络查询 - 兼容旧单层和新两层格式。
         """
-        print(f"\n[Query Single Layer NN] 执行加密查询")
-        
+        print(f"\n[Query Neural Network] 执行加密查询")
+
         results = []
         progress_interval = 10 if len(encrypted_data) <= 1000 else 100
-        
-        # 检查是否有层
+
         if not encrypted_nn.get('layers'):
             print(f"   警告: 神经网络没有层")
             for _ in encrypted_data:
                 try:
                     results.append(self.he.encrypt([0.0]))
-                except:
+                except Exception:
                     results.append(None)
             return results
-        
-        layer = encrypted_nn['layers'][0]
-        encrypted_weights = layer.get('encrypted_weights', [])
-        encrypted_weight_rows = layer.get('encrypted_weight_rows', [])
-        encrypted_bias = layer.get('encrypted_bias', [])
-        encrypted_bias_vector = layer.get('encrypted_bias_vector')
-        weights_shape = layer.get('weights_shape', (10, 784))
 
-        output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else max(1, len(encrypted_bias))
-        input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else 0
+        decoded_layers = []
+        for layer in encrypted_nn.get('layers', []):
+            encrypted_weights = layer.get('encrypted_weights', [])
+            encrypted_weight_rows = layer.get('encrypted_weight_rows', [])
+            encrypted_bias = layer.get('encrypted_bias', [])
+            encrypted_bias_vector = layer.get('encrypted_bias_vector')
+            weights_shape = tuple(layer.get('weights_shape', (0, 0)))
 
-        # 预解密权重和偏置，避免在每条记录上重复解密模型参数。
-        plain_weights = [[0.0 for _ in range(input_dim)] for _ in range(output_dim)]
-        if encrypted_weight_rows:
-            for i in range(output_dim):
-                if i >= len(encrypted_weight_rows) or encrypted_weight_rows[i] is None:
-                    continue
-                try:
-                    row_values = self.he.decrypt(encrypted_weight_rows[i])
-                    if not isinstance(row_values, list):
-                        row_values = [float(row_values)]
-                    for j, value in enumerate(row_values[:input_dim]):
-                        plain_weights[i][j] = float(value)
-                except Exception:
-                    continue
-        else:
-            for i in range(output_dim):
-                for j in range(input_dim):
-                    idx = i * input_dim + j
-                    if idx >= len(encrypted_weights) or encrypted_weights[idx] is None:
+            output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else max(1, len(encrypted_bias))
+            input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else 0
+
+            plain_weights = [[0.0 for _ in range(input_dim)] for _ in range(output_dim)]
+            if encrypted_weight_rows:
+                for i in range(output_dim):
+                    if i >= len(encrypted_weight_rows) or encrypted_weight_rows[i] is None:
                         continue
                     try:
-                        w = self.he.decrypt(encrypted_weights[idx])
-                        if isinstance(w, list):
-                            plain_weights[i][j] = float(w[0]) if w else 0.0
-                        else:
-                            plain_weights[i][j] = float(w)
+                        row_values = self.he.decrypt(encrypted_weight_rows[i])
+                        if not isinstance(row_values, list):
+                            row_values = [float(row_values)]
+                        for j, value in enumerate(row_values[:input_dim]):
+                            plain_weights[i][j] = float(value)
                     except Exception:
-                        plain_weights[i][j] = 0.0
+                        continue
+            else:
+                for i in range(output_dim):
+                    for j in range(input_dim):
+                        idx = i * input_dim + j
+                        if idx >= len(encrypted_weights) or encrypted_weights[idx] is None:
+                            continue
+                        try:
+                            w = self.he.decrypt(encrypted_weights[idx])
+                            if isinstance(w, list):
+                                plain_weights[i][j] = float(w[0]) if w else 0.0
+                            else:
+                                plain_weights[i][j] = float(w)
+                        except Exception:
+                            plain_weights[i][j] = 0.0
 
-        plain_bias = [0.0 for _ in range(output_dim)]
-        if encrypted_bias_vector is not None:
-            try:
-                bias_values = self.he.decrypt(encrypted_bias_vector)
-                if not isinstance(bias_values, list):
-                    bias_values = [float(bias_values)]
-                for i, value in enumerate(bias_values[:output_dim]):
-                    plain_bias[i] = float(value)
-            except Exception:
-                plain_bias = [0.0 for _ in range(output_dim)]
-        else:
-            for i in range(output_dim):
-                if i >= len(encrypted_bias) or encrypted_bias[i] is None:
-                    continue
+            plain_bias = [0.0 for _ in range(output_dim)]
+            if encrypted_bias_vector is not None:
                 try:
-                    b = self.he.decrypt(encrypted_bias[i])
-                    if isinstance(b, list):
-                        plain_bias[i] = float(b[0]) if b else 0.0
-                    else:
-                        plain_bias[i] = float(b)
+                    bias_values = self.he.decrypt(encrypted_bias_vector)
+                    if not isinstance(bias_values, list):
+                        bias_values = [float(bias_values)]
+                    for i, value in enumerate(bias_values[:output_dim]):
+                        plain_bias[i] = float(value)
                 except Exception:
-                    plain_bias[i] = 0.0
-        
+                    plain_bias = [0.0 for _ in range(output_dim)]
+            else:
+                for i in range(output_dim):
+                    if i >= len(encrypted_bias) or encrypted_bias[i] is None:
+                        continue
+                    try:
+                        b = self.he.decrypt(encrypted_bias[i])
+                        if isinstance(b, list):
+                            plain_bias[i] = float(b[0]) if b else 0.0
+                        else:
+                            plain_bias[i] = float(b)
+                    except Exception:
+                        plain_bias[i] = 0.0
+
+            decoded_layers.append({
+                'weights': plain_weights,
+                'bias': plain_bias,
+                'input_dim': input_dim,
+                'output_dim': output_dim,
+                'activation': layer.get('activation', 'linear'),
+            })
+
+        fallback_dim = decoded_layers[-1]['output_dim'] if decoded_layers else 1
+
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
                 record_plain = self.he.decrypt(encrypted_record)
                 if not isinstance(record_plain, list):
                     record_plain = [float(record_plain)]
-                record_vec = [float(v) for v in record_plain[:input_dim]]
-                if len(record_vec) < input_dim:
-                    record_vec.extend([0.0] * (input_dim - len(record_vec)))
 
-                outputs_plain = []
-                for i in range(output_dim):
-                    acc = plain_bias[i]
-                    for j in range(input_dim):
-                        acc += plain_weights[i][j] * record_vec[j]
-                    outputs_plain.append(float(acc))
+                outputs_plain = [float(v) for v in record_plain]
+                for layer in decoded_layers:
+                    input_dim = layer['input_dim']
+                    output_dim = layer['output_dim']
+                    record_vec = outputs_plain[:input_dim]
+                    if len(record_vec) < input_dim:
+                        record_vec.extend([0.0] * (input_dim - len(record_vec)))
 
-                # 保持返回结构兼容：每条记录对应一个密文结果
+                    next_outputs = []
+                    for i in range(output_dim):
+                        acc = layer['bias'][i]
+                        for j in range(input_dim):
+                            acc += layer['weights'][i][j] * record_vec[j]
+                        next_outputs.append(float(acc))
+                    outputs_plain = self._apply_nn_activation(next_outputs, layer['activation'])
+
                 result = self.he.encrypt(outputs_plain if outputs_plain else [0.0])
                 results.append(result)
                 if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
                     print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
-                
+
             except Exception as e:
                 print(f"   第{data_idx}条数据查询失败: {e}")
                 try:
-                    results.append(self.he.encrypt([0.0 for _ in range(max(1, output_dim))]))
-                except:
+                    results.append(self.he.encrypt([0.0 for _ in range(max(1, fallback_dim))]))
+                except Exception:
                     results.append(None)
                 if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
                     print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
-        
-        print(f"      单层神经网络查询完成，生成 {len(results)} 个结果")
+
+        print(f"      神经网络查询完成，生成 {len(results)} 个结果")
         return results
             
     # ========== Query 算法 ==========
-    
-        # ========== 修改 query 方法中的神经网络分支 ==========
     def query(self, C_M: Dict, C_m: Dict, sk_h_s: Any) -> Dict:
         """
         Query(C_M, C_m) → ER
-        所有神经网络查询都使用单层版本
+        支持点积、决策树和浅层神经网络查询
         """
         print(f"\n[Query] 执行加密AI查询...")
         

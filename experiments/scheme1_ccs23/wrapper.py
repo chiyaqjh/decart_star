@@ -125,8 +125,19 @@ class CCS23ExperimentWrapper:
             'aux_size_bytes': 0,
             'total_auxiliary_size_bytes': 0
         }
-        
-        print(f" CCS23 实验环境初始化完成（中心化明文计算）")
+
+    @staticmethod
+    def _should_report_progress(current: int, total: int) -> bool:
+        if total <= 10:
+            return True
+        interval = max(1, total // 5)
+        return current == 1 or current == total or current % interval == 0
+
+    @classmethod
+    def _report_progress(cls, stage: str, current: int, total: int, progress_label: Optional[str] = None):
+        if cls._should_report_progress(current, total):
+            prefix = f"{progress_label} " if progress_label else ""
+            print(f"      {prefix}{stage} 进度: {current}/{total}")
     
     def setup(self) -> float:
         """
@@ -201,6 +212,8 @@ class CCS23ExperimentWrapper:
             'size': size,
             'records': len(data)
         })
+
+        self._report_progress('数据存储', len(data), len(data))
         
         print(f"    CCS23 存储数据: {elapsed*1000:.2f} ms (明文基线), 数据大小: {size/1024:.2f} KB")
         
@@ -218,12 +231,18 @@ class CCS23ExperimentWrapper:
     def store_dataset(self, owner_id: int, dataset_id: str, C_m: Dict, sk_h_s: Any):
         """CCS23 中不需要额外存储（已在 encrypt_dataset 中完成）"""
         pass
+
+    def prepare_query_model(self, querier_id: int, model: Any) -> Any:
+        """Plaintext baseline reuses the same model object across repeated queries."""
+        return model
     
     def execute_query(self,
                      querier_id: int,
                      owner_id: int,
                      dataset_id: str,
-                     model: Any) -> Optional[List[float]]:
+                     model: Any,
+                     prepared_model: Any = None,
+                     progress_label: Optional[str] = None) -> Optional[List[float]]:
         """
         CCS23 中执行明文查询
         
@@ -244,12 +263,14 @@ class CCS23ExperimentWrapper:
         self.metrics['check_times'].append(time.perf_counter() - check_start)
 
         # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        active_model = prepared_model if prepared_model is not None else model
+
         req_payload = {
             'querier_id': querier_id,
             'owner_id': owner_id,
             'dataset_id': dataset_id,
-            'encrypted_model': model,
-            'model_type': model.get('type', 'dot_product') if isinstance(model, dict) else 'dot_product'
+            'encrypted_model': active_model,
+            'model_type': active_model.get('type', 'dot_product') if isinstance(active_model, dict) else 'dot_product'
         }
         req_size = self._safe_obj_size(req_payload)
         self.metrics['communication_sizes'].append({
@@ -263,46 +284,60 @@ class CCS23ExperimentWrapper:
         # 执行明文查询
         start_query = time.perf_counter()
         
+        total_records = len(data)
         results = []
-        if isinstance(model, list):
+        if isinstance(active_model, list):
             # 点积模型: y = model · x
-            for record in data:
+            for index, record in enumerate(data, start=1):
                 # 确保维度匹配
-                min_len = min(len(model), len(record))
-                result = sum(model[i] * record[i] for i in range(min_len))
+                min_len = min(len(active_model), len(record))
+                result = sum(active_model[i] * record[i] for i in range(min_len))
                 results.append(result)
-        elif isinstance(model, dict) and model.get('type') == 'neural_network':
-            # 神经网络模型 - 单层
-            weights = model.get('weights', [])
-            bias = model.get('bias', [])
-            output_dim = model.get('output_dim', 10)
-            
-            for record in data:
-                # 简单矩阵乘法（单层）
-                outputs = []
-                for i in range(min(output_dim, 10)):
-                    # 取对应行的权重
-                    start_idx = i * len(record)
-                    end_idx = (i + 1) * len(record)
-                    row_weights = weights[start_idx:end_idx] if len(weights) > start_idx else []
-                    
-                    if row_weights:
-                        val = sum(w * record[j] for j, w in enumerate(row_weights) if j < len(record))
+                self._report_progress('查询计算', index, total_records, progress_label)
+        elif isinstance(active_model, dict) and active_model.get('type') == 'neural_network':
+            for index, record in enumerate(data, start=1):
+                values = [float(v) for v in record]
+                layers = active_model.get('layers') or [
+                    {
+                        'weights': active_model.get('weights', []),
+                        'bias': active_model.get('bias', []),
+                        'weights_shape': (int(active_model.get('output_dim', 10) or 10), len(record)),
+                        'activation': 'linear',
+                    }
+                ]
+
+                for layer in layers:
+                    weights = layer.get('weights', [])
+                    bias = layer.get('bias', [])
+                    weights_shape = tuple(layer.get('weights_shape', (int(active_model.get('output_dim', 10) or 10), len(values))))
+                    output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else len(bias)
+                    input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else len(values)
+                    record_vec = values[:input_dim]
+                    if len(record_vec) < input_dim:
+                        record_vec.extend([0.0] * (input_dim - len(record_vec)))
+
+                    next_values = []
+                    for i in range(output_dim):
+                        start_idx = i * input_dim
+                        row_weights = weights[start_idx:start_idx + input_dim] if len(weights) > start_idx else []
+                        val = sum(float(w) * record_vec[j] for j, w in enumerate(row_weights) if j < input_dim)
                         if i < len(bias):
-                            val += bias[i]
-                        outputs.append(val)
-                    else:
-                        outputs.append(0.0)
-                
-                results.append(outputs[0] if outputs else 0.0)
-        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
+                            val += float(bias[i])
+                        if layer.get('activation', 'linear') == 'square':
+                            val = val * val
+                        next_values.append(val)
+                    values = next_values
+
+                results.append(values[0] if values else 0.0)
+                self._report_progress('查询计算', index, total_records, progress_label)
+        elif isinstance(active_model, dict) and active_model.get('type') == 'decision_tree':
             # 简单决策树：统一基线逻辑
             # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
-            nodes = model.get('nodes', [])
+            nodes = active_model.get('nodes', [])
             node_map = {n.get('id'): n for n in nodes}
-            root_id = model.get('root', 0)
+            root_id = active_model.get('root', 0)
 
-            for record in data:
+            for index, record in enumerate(data, start=1):
                 current_id = root_id
                 depth = 0
                 max_depth = 10
@@ -326,10 +361,12 @@ class CCS23ExperimentWrapper:
                 else:
                     # 防御性回退
                     results.append(0.0)
+                self._report_progress('查询计算', index, total_records, progress_label)
         else:
             # 默认处理
-            for record in data:
+            for index, record in enumerate(data, start=1):
                 results.append(float(np.random.randn()))
+                self._report_progress('查询计算', index, total_records, progress_label)
         
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
@@ -346,6 +383,8 @@ class CCS23ExperimentWrapper:
         decrypt_time = 0
         self.metrics['decrypt_times'].append(decrypt_time)
         
+        self._report_progress('结果返回', len(results), len(results), progress_label)
+        print(f"      明文结果返回: {len(results)}/{len(results)}")
         print(f"    CCS23 查询时间: {query_time*1000:.2f} ms, 结果数量: {len(results)}")
         
         return results

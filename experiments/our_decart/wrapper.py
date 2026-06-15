@@ -259,11 +259,43 @@ class DeCartExperimentWrapper:
     
     # 在 experiments/our_decart/wrapper.py 的 execute_query 方法中
 
+    def prepare_query_model(self, querier_id: int, model: Any) -> Dict[str, Any]:
+        """Prepare a reusable encrypted model package for repeated queries."""
+        querier = self.create_querier(querier_id)
+        model_encrypt_start = time.perf_counter()
+
+        if isinstance(model, list) or (isinstance(model, dict) and model.get('type') == 'neural_network'):
+            prepared = querier.encrypt_ai_model(model, {'access_granted': True})
+        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
+            pk_h = self.curator.system.he.public_key
+            if hasattr(self.curator.system, 'encrypt_decision_tree'):
+                encrypted_model = self.curator.system.encrypt_decision_tree(model, pk_h)
+            else:
+                encrypted_model = {
+                    'type': 'decision_tree',
+                    'encrypted': True,
+                    'nodes': model.get('nodes', [])
+                }
+            prepared = {
+                'encrypted_model': encrypted_model,
+                'model_type': 'decision_tree',
+            }
+        else:
+            raise TypeError(f"不支持的模型类型: {type(model)}")
+
+        self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
+        return {
+            'encrypted_model': prepared.get('encrypted_model'),
+            'model_type': prepared.get('model_type'),
+            'model_dim': prepared.get('model_dim'),
+        }
+
     def execute_query(self,
                     querier_id: int,
                     owner_id: int,
                     dataset_id: str,
-                    model: Any) -> Optional[List[float]]:
+                    model: Any,
+                    prepared_model: Optional[Dict[str, Any]] = None) -> Optional[List[float]]:
         """
         执行查询 - 支持多种模型类型
         """
@@ -295,38 +327,17 @@ class DeCartExperimentWrapper:
         if C_M is None:
             return None
         
-        # 根据模型类型处理
-        if isinstance(model, list) or (isinstance(model, dict) and model.get('type') == 'neural_network'):
-            model_encrypt_start = time.perf_counter()
-            if isinstance(model, list):
-                print(f"    点积模型加密...")
-            else:
-                print(f"    神经网络模型加密...")
-            C_M = querier.encrypt_ai_model(model, C_M)
-            self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
-
-        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
-            # 决策树模型 - 使用系统方法加密
-            print(f"    决策树模型加密...")
-            pk_h = self.curator.system.he.public_key
-            model_encrypt_start = time.perf_counter()
-            
-            if hasattr(self.curator.system, 'encrypt_decision_tree'):
-                encrypted_model = self.curator.system.encrypt_decision_tree(model, pk_h)
-            else:
-                # 简化的决策树加密
-                encrypted_model = {
-                    'type': 'decision_tree',
-                    'encrypted': True,
-                    'nodes': model.get('nodes', [])
-                }
-            C_M['encrypted_model'] = encrypted_model
-            C_M['model_type'] = 'decision_tree'
-            self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
-            
+        if prepared_model is not None:
+            C_M['encrypted_model'] = prepared_model.get('encrypted_model')
+            C_M['model_type'] = prepared_model.get('model_type')
+            if prepared_model.get('model_dim') is not None:
+                C_M['model_dim'] = prepared_model.get('model_dim')
         else:
-            print(f"   ❌ 不支持的模型类型: {type(model)}")
-            return None
+            prepared_model = self.prepare_query_model(querier_id, model)
+            C_M['encrypted_model'] = prepared_model.get('encrypted_model')
+            C_M['model_type'] = prepared_model.get('model_type')
+            if prepared_model.get('model_dim') is not None:
+                C_M['model_dim'] = prepared_model.get('model_dim')
 
         # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
         req_payload = {

@@ -1,0 +1,233 @@
+{
+  "config": {
+    "N": 10000,
+    "n": 32,
+    "num_records": 1000,
+    "record_dim": 1000,
+    "dataset": "synthetic",
+    "mnist_data_dir": "data",
+    "model_source": "synthetic",
+    "trained_models_dir": "experiments/models/trained",
+    "model_types": [
+      "decision_tree"
+    ],
+    "policy_size": 32,
+    "num_queriers": 1,
+    "num_runs": 1,
+    "save_results": true,
+    "results_dir": "C:\\Users\\ASUS\\AppData\\Local\\Temp\\naive_ccs23_rerun_v0ajqe2s"
+  },
+  "models": {
+    "decision_tree": {
+      "setup_times": [
+        1.3299999409355223e-05
+      ],
+      "keygen_times": [
+        0.00012210000386403408
+      ],
+      "register_times": [
+        2.2599992007599212e-05
+      ],
+      "check_times": [
+        1.8999999156221747e-06
+      ],
+      "encrypt_times": [
+        25.733828499998708
+      ],
+      "query_times": [
+        20.90722199999982
+      ],
+      "decrypt_times": [
+        11.227642099998775
+      ],
+      "communication_sizes": [
+        2963391106.0
+      ],
+      "comm_upload_sizes": [
+        987790318
+      ],
+      "comm_check_sizes": [
+        342
+      ],
+      "comm_query_sizes": [
+        375
+      ],
+      "comm_decrypt_sizes": [
+        1975600071
+      ],
+      "setup_crs_sizes": [
+        213
+      ],
+      "setup_pp_sizes": [
+        5
+      ],
+      "setup_aux_sizes": [
+        5
+      ],
+      "setup_total_auxiliary_sizes": [
+        223
+      ],
+      "register_crs_sizes": [
+        213
+      ],
+      "register_pp_sizes": [
+        2604
+      ],
+      "register_aux_sizes": [
+        5
+      ],
+      "register_total_auxiliary_sizes": [
+        2822
+      ],
+      "final_crs_sizes": [
+        213
+      ],
+      "final_pp_sizes": [
+        2604
+      ],
+      "final_aux_sizes": [
+        1550
+      ],
+      "final_total_auxiliary_sizes": [
+        4367
+      ],
+      "runs": [
+        {
+          "run_id": 0,
+          "keygen_times": [
+            1.1800000720540993e-05,
+            8.19999877421651e-06,
+            2.5000008463393897e-06,
+            5.600000804406591e-06,
+            3.5000011848751456e-06,
+            2.999999196617864e-06,
+            2.4000000848900527e-06,
+            3.7999998312443495e-06,
+            3.099999958067201e-06,
+            1.8999999156221747e-06,
+            2.1999985619913787e-06,
+            8.700000762473792e-06,
+            8.099999831756577e-06,
+            2.70000055024866e-06,
+            6.400001439033076e-06,
+            1.8999999156221747e-06,
+            2.099999619531445e-06,
+            1.8999999156221747e-06,
+            2.200000380980782e-06,
+            2.0000006770715117e-06,
+            2.2999993234407157e-06,
+            2.0000006770715117e-06,
+            3.200000719516538e-06,
+            2.200000380980782e-06,
+            2.200000380980782e-06,
+            4.899999112240039e-06,
+            2.099999619531445e-06,
+            2.4000000848900527e-06,
+            1.8999999156221747e-06,
+            2.099999619531445e-06,
+            7.599999662488699e-06,
+            5.20000139658805e-06
+          ],
+          "keygen_time": 0.00012210000386403408,
+          "register_times": [
+            2.099999619531445e-06,
+            1.2000000424450263e-06,
+            3.9999940781854093e-07,
+            1.0999992809956893e-06,
+            8.999995770864189e-07,
+            1.2000000424450263e-06,
+            5.999991117278114e-07,
+            8.000006346264854e-07,
+            6.000009307172149e-07,
+            3.9999940781854093e-07,
+            1.5000005078036338e-06,
+            8.999995770864189e-07,
+            8.999995770864189e-07,
+            5.000001692678779e-07,
+            3.0000046535860747e-07,
+            2.999986463692039e-07,
+            1.9999970390927047e-07,
+            1.9999970390927047e-07,
+            1.0000003385357559e-06,
+            3.0000046535860747e-07,
+            3.0000046535860747e-07,
+            1.999998858082108e-06,
+            4.999983502784744e-07,
+            1.9999970390927047e-07,
+            2.999986463692039e-07,
+            7.999988156370819e-07,
+            3.9999940781854093e-07,
+            3.9999940781854093e-07,
+            5.000001692678779e-07,
+            1.9999970390927047e-07,
+            1.1000010999850929e-06,
+            5.000001692678779e-07
+          ],
+          "register_time": 2.2599992007599212e-05,
+          "check_time": 1.8999999156221747e-06,
+          "encrypt_times": [
+            25.733825699999215,
+            2.7999994927085936e-06
+          ],
+          "encrypt_time": 25.733828499998708,
+          "query_time": 20.90722199999982,
+          "decrypt_time": 11.227642099998775,
+          "communication_size": 2963391106.0,
+          "setup_auxiliary_sizes": {
+            "crs_size_bytes": 213,
+            "pp_size_bytes": 5,
+            "aux_size_bytes": 5,
+            "total_auxiliary_size_bytes": 223
+          },
+          "register_auxiliary_sizes": {
+            "crs_size_bytes": 213,
+            "pp_size_bytes": 2604,
+            "aux_size_bytes": 5,
+            "total_auxiliary_size_bytes": 2822
+          },
+          "final_auxiliary_sizes": {
+            "crs_size_bytes": 213,
+            "pp_size_bytes": 2604,
+            "aux_size_bytes": 1550,
+            "total_auxiliary_size_bytes": 4367
+          },
+          "success": true,
+          "num_results": 1000
+        }
+      ]
+    }
+  },
+  "summary": {
+    "decision_tree": {
+      "avg_setup_time": 1.3299999409355223e-05,
+      "std_setup_time": 0.0,
+      "avg_keygen_time": 0.00012210000386403408,
+      "std_keygen_time": 0.0,
+      "avg_register_time": 2.2599992007599212e-05,
+      "std_register_time": 0.0,
+      "avg_check_time": 1.8999999156221747e-06,
+      "std_check_time": 0.0,
+      "avg_encrypt_time": 25.733828499998708,
+      "std_encrypt_time": 0.0,
+      "avg_query_time": 20.90722199999982,
+      "std_query_time": 0.0,
+      "avg_decrypt_time": 11.227642099998775,
+      "std_decrypt_time": 0.0,
+      "avg_communication_size": 2893936.626953125,
+      "std_communication_size": 0.0,
+      "total_communication": 2893936.626953125,
+      "avg_setup_crs_size_kb": 0.2080078125,
+      "avg_setup_pp_size_kb": 0.0048828125,
+      "avg_setup_aux_size_kb": 0.0048828125,
+      "avg_setup_total_auxiliary_size_kb": 0.2177734375,
+      "avg_register_crs_size_kb": 0.2080078125,
+      "avg_register_pp_size_kb": 2.54296875,
+      "avg_register_aux_size_kb": 0.0048828125,
+      "avg_register_total_auxiliary_size_kb": 2.755859375,
+      "avg_final_crs_size_kb": 0.2080078125,
+      "avg_final_pp_size_kb": 2.54296875,
+      "avg_final_aux_size_kb": 1.513671875,
+      "avg_final_total_auxiliary_size_kb": 4.2646484375
+    }
+  }
+}

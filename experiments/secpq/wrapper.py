@@ -127,7 +127,7 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
 
         return c_m, sk_h_s, dataset_id
 
-    def execute_query(self, querier_id, owner_id, dataset_id, model):
+    def execute_query(self, querier_id, owner_id, dataset_id, model, prepared_model=None):
         if not (isinstance(model, dict) and model.get('type') == 'decision_tree'):
             raise ValueError('SecPQ 当前仅支持 decision_tree 查询')
 
@@ -160,7 +160,7 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
         query_token = hashlib.sha256(token_material).digest()
         token_elapsed = time.perf_counter() - token_start
 
-        results = super().execute_query(querier_id, owner_id, dataset_id, model)
+        results = super().execute_query(querier_id, owner_id, dataset_id, model, prepared_model=prepared_model)
 
         if self.metrics['query_times']:
             self.metrics['query_times'][-1] += token_elapsed

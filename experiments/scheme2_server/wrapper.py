@@ -130,8 +130,19 @@ class ServerSchemeExperimentWrapper:
             'aux_size_bytes': 0,
             'total_auxiliary_size_bytes': 0
         }
-        
-        print(f"  Server 方案实验环境初始化完成（单一可信服务器）")
+
+    @staticmethod
+    def _should_report_progress(current: int, total: int) -> bool:
+        if total <= 10:
+            return True
+        interval = max(1, total // 5)
+        return current == 1 or current == total or current % interval == 0
+
+    @classmethod
+    def _report_progress(cls, stage: str, current: int, total: int, progress_label: Optional[str] = None):
+        if cls._should_report_progress(current, total):
+            prefix = f"{progress_label} " if progress_label else ""
+            print(f"      {prefix}{stage} 进度: {current}/{total}")
     
     def setup(self) -> float:
         """
@@ -186,9 +197,11 @@ class ServerSchemeExperimentWrapper:
         
         # 加密每条数据记录
         encrypted_data = []
-        for record in data:
+        total_records = len(data)
+        for index, record in enumerate(data, start=1):
             encrypted_record = self.he.encrypt(record)
             encrypted_data.append(encrypted_record)
+            self._report_progress('数据集加密', index, total_records)
         
         elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
@@ -245,22 +258,66 @@ class ServerSchemeExperimentWrapper:
             # 点积模型 - 加密列表
             return self.he.encrypt(model)
         elif isinstance(model, dict) and model.get('type') == 'neural_network':
-            # 神经网络模型 - 加密权重和偏置
-            weights = model.get('weights', [])
-            bias = model.get('bias', [])
-            
-            encrypted_weights = []
-            for w in weights[:100]:  # 限制数量
-                encrypted_weights.append(self.he.encrypt([float(w)]))
-            
-            encrypted_bias = []
-            for b in bias:
-                encrypted_bias.append(self.he.encrypt([float(b)]))
-            
+            encrypted_layers = []
+            layers = model.get('layers') or [
+                {
+                    'weights': model.get('weights', []),
+                    'bias': model.get('bias', []),
+                    'weights_shape': (model.get('output_dim'), model.get('input_dim')),
+                    'activation': 'linear',
+                }
+            ]
+
+            total_units = 0
+            for layer in layers:
+                weights_shape = tuple(layer.get('weights_shape', (0, 0)))
+                output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else 0
+                total_units += output_dim
+                if layer.get('bias', []):
+                    total_units += 1
+
+            processed_units = 0
+
+            for layer in layers:
+                weights = layer.get('weights', [])
+                bias = layer.get('bias', [])
+                weights_shape = tuple(layer.get('weights_shape', (0, 0)))
+                output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else 0
+                input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else 0
+
+                encrypted_weight_rows = []
+                for row_idx in range(output_dim):
+                    row_start = row_idx * input_dim
+                    row_end = row_start + input_dim
+                    weight_row = [float(value) for value in weights[row_start:row_end]]
+                    if len(weight_row) < input_dim:
+                        weight_row.extend([0.0] * (input_dim - len(weight_row)))
+                    encrypted_weight_rows.append(self.he.encrypt(weight_row))
+                    processed_units += 1
+                    self._report_progress('模型加密', processed_units, total_units)
+
+                encrypted_bias_vector = None
+                bias_values = [float(value) for value in bias]
+                if bias_values:
+                    encrypted_bias_vector = self.he.encrypt(bias_values)
+                    processed_units += 1
+                    self._report_progress('模型加密', processed_units, total_units)
+
+                encrypted_layers.append({
+                    'layer_idx': layer.get('layer_idx', len(encrypted_layers)),
+                    'layer_type': layer.get('layer_type', 'linear'),
+                    'activation': layer.get('activation', 'linear'),
+                    'weights_shape': layer.get('weights_shape'),
+                    'bias_shape': tuple(layer.get('bias_shape', (len(bias_values),))),
+                    'encrypted_weights': [],
+                    'encrypted_bias': [],
+                    'encrypted_weight_rows': encrypted_weight_rows,
+                    'encrypted_bias_vector': encrypted_bias_vector,
+                })
+
             return {
                 'type': 'neural_network',
-                'encrypted_weights': encrypted_weights,
-                'encrypted_bias': encrypted_bias,
+                'layers': encrypted_layers,
                 'input_dim': model.get('input_dim'),
                 'output_dim': model.get('output_dim')
             }
@@ -268,32 +325,58 @@ class ServerSchemeExperimentWrapper:
             # 默认处理
             return self.he.encrypt([0.0])
 
+    def prepare_query_model(self, querier_id: int, model: Any) -> Any:
+        """Encrypt the model once and reuse it across repeated queries."""
+        start_encrypt_model = time.perf_counter()
+        print("   准备查询模型...")
+        encrypted_model = self.encrypt_model(model)
+        elapsed = time.perf_counter() - start_encrypt_model
+        self.metrics['encrypt_times'].append(elapsed)
+        print(f"   查询模型准备完成: {elapsed*1000:.2f} ms")
+        return encrypted_model
+
     @staticmethod
     def _evaluate_neural_network_plain(model: Dict[str, Any], plain_record: List[float]) -> float:
-        weights = model.get('weights', [])
-        bias = model.get('bias', [])
-        output_dim = int(model.get('output_dim', 10) or 10)
-        input_dim = len(plain_record)
+        values = [float(v) for v in plain_record]
+        layers = model.get('layers') or [
+            {
+                'weights': model.get('weights', []),
+                'bias': model.get('bias', []),
+                'weights_shape': (int(model.get('output_dim', 10) or 10), len(plain_record)),
+                'activation': 'linear',
+            }
+        ]
 
-        outputs = []
-        for output_index in range(min(output_dim, 10)):
-            start_idx = output_index * input_dim
-            end_idx = start_idx + input_dim
-            row_weights = weights[start_idx:end_idx] if len(weights) > start_idx else []
-            if not row_weights:
-                outputs.append(0.0)
-                continue
-            value = sum(float(weight) * plain_record[idx] for idx, weight in enumerate(row_weights) if idx < input_dim)
-            if output_index < len(bias):
-                value += float(bias[output_index])
-            outputs.append(value)
-        return outputs[0] if outputs else 0.0
+        for layer in layers:
+            weights = layer.get('weights', [])
+            bias = layer.get('bias', [])
+            weights_shape = tuple(layer.get('weights_shape', (int(model.get('output_dim', 10) or 10), len(values))))
+            output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else len(bias)
+            input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else len(values)
+            record_vec = values[:input_dim]
+            if len(record_vec) < input_dim:
+                record_vec.extend([0.0] * (input_dim - len(record_vec)))
+
+            next_values = []
+            for output_index in range(output_dim):
+                start_idx = output_index * input_dim
+                row_weights = weights[start_idx:start_idx + input_dim] if len(weights) > start_idx else []
+                value = sum(float(weight) * record_vec[idx] for idx, weight in enumerate(row_weights) if idx < input_dim)
+                if output_index < len(bias):
+                    value += float(bias[output_index])
+                if layer.get('activation', 'linear') == 'square':
+                    value = value * value
+                next_values.append(value)
+            values = next_values
+        return values[0] if values else 0.0
     
     def execute_query(self,
                      querier_id: int,
                      owner_id: int,
                      dataset_id: str,
-                     model: Any) -> Optional[List[float]]:
+                     model: Any,
+                     prepared_model: Any = None,
+                     progress_label: Optional[str] = None) -> Optional[List[float]]:
         """
         执行查询（服务器端同态计算）
         
@@ -319,11 +402,7 @@ class ServerSchemeExperimentWrapper:
 
         encrypted_data = dataset_info['encrypted_data']
         
-        # 加密模型
-        start_encrypt_model = time.perf_counter()
-        encrypted_model = self.encrypt_model(model)
-        model_encrypt_time = time.perf_counter() - start_encrypt_model
-        self.metrics['encrypt_times'].append(model_encrypt_time)
+        encrypted_model = prepared_model if prepared_model is not None else self.prepare_query_model(querier_id, model)
 
         # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
         req_payload = {
@@ -343,16 +422,18 @@ class ServerSchemeExperimentWrapper:
         # 执行同态查询
         start_query = time.perf_counter()
         
+        total_records = len(encrypted_data)
         results = []
         if isinstance(model, list):
             # 点积模型
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data, start=1):
                 try:
                     # 同态点积
                     result = enc_record.dot(encrypted_model)
                     results.append(result)
                 except:
                     results.append(self.he.encrypt([0.0]))
+                self._report_progress('查询计算', index, total_records, progress_label)
         elif isinstance(model, dict) and model.get('type') == 'decision_tree':
             # 简单决策树：统一基线逻辑
             # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
@@ -360,7 +441,7 @@ class ServerSchemeExperimentWrapper:
             node_map = {n.get('id'): n for n in nodes}
             root_id = model.get('root', 0)
 
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data, start=1):
                 try:
                     plain_record = self.he.decrypt(enc_record)
                     if not isinstance(plain_record, list):
@@ -391,8 +472,9 @@ class ServerSchemeExperimentWrapper:
                     results.append(self.he.encrypt([pred]))
                 except:
                     results.append(self.he.encrypt([0.0]))
+                self._report_progress('查询计算', index, total_records, progress_label)
         elif isinstance(model, dict) and model.get('type') == 'neural_network':
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data, start=1):
                 try:
                     plain_record = self.he.decrypt(enc_record)
                     if not isinstance(plain_record, list):
@@ -401,10 +483,12 @@ class ServerSchemeExperimentWrapper:
                     results.append(self.he.encrypt([pred]))
                 except:
                     results.append(self.he.encrypt([0.0]))
+                self._report_progress('查询计算', index, total_records, progress_label)
         else:
             # 简化处理
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data, start=1):
                 results.append(self.he.encrypt([0.0]))
+                self._report_progress('查询计算', index, total_records, progress_label)
         
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
@@ -420,7 +504,8 @@ class ServerSchemeExperimentWrapper:
         # 解密结果（服务器拥有私钥）
         start_decrypt = time.perf_counter()
         decrypted_results = []
-        for enc_result in results:
+        total_results = len(results)
+        for index, enc_result in enumerate(results, start=1):
             try:
                 dec = self.he.decrypt(enc_result)
                 if isinstance(dec, list):
@@ -429,12 +514,16 @@ class ServerSchemeExperimentWrapper:
                     decrypted_results.append(float(dec))
             except:
                 decrypted_results.append(0.0)
+            self._report_progress('结果解密', index, total_results, progress_label)
         
         decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
         print(f"      Server 方案查询: {query_time*1000:.2f} ms")
-        print(f"      模型加密: {model_encrypt_time*1000:.2f} ms")
+        if prepared_model is None:
+            print(f"      模型加密: {self.metrics['encrypt_times'][-1]*1000:.2f} ms")
+        else:
+            print(f"      模型加密: 0.00 ms (复用已准备模型)")
         print(f"      结果解密: {decrypt_time*1000:.2f} ms")
         
         return decrypted_results

@@ -61,11 +61,25 @@ class ActivationFunctions:
         在[-1,1]区间有效
         """
         return x - (x * x * x) / 3.0
+
+    @staticmethod
+    def square(x: float) -> float:
+        """平方激活: f(x) = x^2"""
+        return x * x
+
+    @staticmethod
+    def linear(x: float) -> float:
+        """线性激活: f(x) = x"""
+        return x
     
     @staticmethod
     def get_he_friendly(name: str, x: float) -> float:
         """获取同态友好的激活函数值"""
-        if name == "relu_square":
+        if name == "linear":
+            return ActivationFunctions.linear(x)
+        elif name == "square":
+            return ActivationFunctions.square(x)
+        elif name == "relu_square":
             return ActivationFunctions.relu_square(x)
         elif name == "relu_poly3":
             return ActivationFunctions.relu_poly3(x)
@@ -222,7 +236,7 @@ class DecisionTreeHE:
 # decart/schemes/ai_models.py
 
 class NeuralNetworkHE:
-    """同态神经网络 - 默认使用单层架构"""
+    """同态神经网络 - 支持单层和最小单隐层架构"""
     
     def __init__(self):
         self.layers: List[Dict] = []
@@ -256,12 +270,74 @@ class NeuralNetworkHE:
         self.output_dim = output_dim
         
         print(f"   创建单层网络: {input_dim} -> {output_dim}, 激活={activation}")
+
+    def add_layer(self,
+                  input_dim: int,
+                  output_dim: int,
+                  activation: str = "linear",
+                  weight_scale: Optional[float] = None):
+        """添加一层全连接层。"""
+        if weight_scale is None:
+            weight_scale = min(0.1, 1.0 / np.sqrt(max(1, input_dim)))
+
+        w = np.random.randn(output_dim, input_dim).astype(np.float32) * weight_scale
+        b = np.random.randn(output_dim).astype(np.float32) * weight_scale
+
+        self.layers.append({
+            'weights': w,
+            'bias': b,
+        })
+        self.layer_types.append('linear')
+        self.activations.append(activation)
+
+        if self.input_dim is None:
+            self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        print(f"   创建网络层: {input_dim} -> {output_dim}, 激活={activation}")
+
+    def add_shallow_mlp(self,
+                        input_dim: int,
+                        hidden_dim: int = 16,
+                        output_dim: int = 10,
+                        hidden_activation: str = "square",
+                        output_activation: str = "linear"):
+        """创建最小单隐层 MLP: input -> hidden -> output。"""
+        self.layers = []
+        self.layer_types = []
+        self.activations = []
+        self.input_dim = None
+        self.output_dim = None
+        self.add_layer(input_dim, hidden_dim, activation=hidden_activation)
+        self.add_layer(hidden_dim, output_dim, activation=output_activation)
+        print(
+            f"   创建单隐层网络: {input_dim} -> {hidden_dim} -> {output_dim}, "
+            f"激活=({hidden_activation}, {output_activation})"
+        )
     
     @classmethod
     def create_mnist_single_layer(cls):
         """创建MNIST单层网络 (784 -> 10)"""
         nn = cls()
         nn.add_single_layer(784, 10, activation="linear")
+        return nn
+
+    @classmethod
+    def create_shallow_mlp(cls,
+                           input_dim: int,
+                           hidden_dim: int = 16,
+                           output_dim: int = 10,
+                           hidden_activation: str = "square",
+                           output_activation: str = "linear"):
+        """创建最小单隐层 MLP。"""
+        nn = cls()
+        nn.add_shallow_mlp(
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            output_dim=output_dim,
+            hidden_activation=hidden_activation,
+            output_activation=output_activation,
+        )
         return nn
     
     def get_encryptable_params(self) -> List[Dict]:
@@ -283,10 +359,16 @@ class NeuralNetworkHE:
         """明文评估 - 用于验证"""
         if len(self.layers) == 0:
             return x
-        
-        # 单层网络: y = Wx + b
-        layer = self.layers[0]
-        return np.dot(layer['weights'], x) + layer['bias']
+
+        values = np.asarray(x, dtype=np.float32)
+        for layer, activation in zip(self.layers, self.activations):
+            values = np.dot(layer['weights'], values) + layer['bias']
+            if activation != 'linear':
+                values = np.asarray(
+                    [ActivationFunctions.get_he_friendly(activation, float(v)) for v in values],
+                    dtype=np.float32,
+                )
+        return values
 
 
 class EncryptedModelWrapper:

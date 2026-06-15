@@ -3,11 +3,13 @@
 Naive CCS-2023 baseline wrapper.
 
 This baseline is intentionally separate from the existing plain-text CCS23 upper bound.
-It models a registration-based encryption style workflow where the whole ciphertext is
-wrapped for authorized queriers after the encrypted payload is produced.
+It models a registration-based authorization workflow in which encrypted datasets are
+wrapped for registered queriers and only authorized queriers can recover a valid query
+response package.
 
-The implementation is a lightweight experimental surrogate so it fits the current
-benchmark harness without changing existing methods.
+The implementation remains lightweight, but it exposes explicit request validation,
+authorization-bound result recovery, and end-to-end support for dot-product,
+decision-tree, and neural-network query workloads.
 """
 
 import hashlib
@@ -28,6 +30,7 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
     _PAYLOAD_MAGIC = b'NCC2'
     _PAYLOAD_CHUNK_SIZE = 64 * 1024 * 1024
     _PACKAGE_FORMAT = 'chunked_records_v1'
+    _RESULT_PACKAGE_FORMAT = 'chunked_query_result_v1'
 
     def __init__(self, N: int = 64, n: int = 16):
         super().__init__(N=N, n=n)
@@ -37,6 +40,7 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
         self.ciphertext_headers: Dict[Tuple[int, str], Dict[str, Any]] = {}
         self.user_private_material: Dict[int, bytes] = {}
         self.wrapped_ciphertext_store: Dict[Tuple[int, str], bytes] = {}
+        self.authorized_query_log: Dict[Tuple[int, int, str], Dict[str, Any]] = {}
 
     def setup(self) -> float:
         start = time.perf_counter()
@@ -148,6 +152,230 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
     def _unwrap_for_user(self, user_id: int, wrapped_key: bytes, dataset_id: str) -> bytes:
         mask = self._derive_recovery_mask(user_id, dataset_id)
         return self._xor_bytes(wrapped_key, mask)
+
+    def _derive_result_recovery_key(
+        self,
+        querier_id: int,
+        dataset_id: str,
+        query_token: bytes,
+        recovered_envelope_key: bytes,
+    ) -> bytes:
+        entry = self.registration_directory[querier_id]
+        material = (
+            recovered_envelope_key
+            + query_token
+            + dataset_id.encode('utf-8')
+            + entry['registration_tag']
+            + self.master_secret
+        )
+        return hashlib.sha256(material).digest()
+
+    def encrypt_model(self, model: Any) -> Any:
+        """Explicit model encryption path so the baseline no longer relies on the inherited server implementation."""
+        if isinstance(model, list):
+            return self.he.encrypt(model)
+
+        if isinstance(model, dict) and model.get('type') == 'neural_network':
+            weights = model.get('weights', [])
+            bias = model.get('bias', [])
+            encrypted_weights = [self.he.encrypt([float(weight)]) for weight in weights[:100]]
+            encrypted_bias = [self.he.encrypt([float(item)]) for item in bias]
+            return {
+                'type': 'neural_network',
+                'encrypted_weights': encrypted_weights,
+                'encrypted_bias': encrypted_bias,
+                'input_dim': model.get('input_dim'),
+                'output_dim': model.get('output_dim'),
+            }
+
+        if isinstance(model, dict) and model.get('type') == 'decision_tree':
+            return {
+                'type': 'decision_tree',
+                'encrypted': True,
+                'nodes': model.get('nodes', []),
+            }
+
+        return self.he.encrypt([0.0])
+
+    def _build_query_request(
+        self,
+        querier_id: int,
+        owner_id: int,
+        dataset_id: str,
+        query_token: bytes,
+        encrypted_model: Any,
+        model: Any,
+    ) -> Dict[str, Any]:
+        model_type = model.get('type', 'dot_product') if isinstance(model, dict) else 'dot_product'
+        request = {
+            'querier_id': querier_id,
+            'owner_id': owner_id,
+            'dataset_id': dataset_id,
+            'query_token': query_token,
+            'encrypted_model': encrypted_model,
+            'model_type': model_type,
+            'request_commitment': hashlib.sha256(
+                query_token + dataset_id.encode('utf-8') + str(querier_id).encode('utf-8')
+            ).digest(),
+        }
+        return request
+
+    def _authorize_query_request(self, request: Dict[str, Any], header: Dict[str, Any]) -> None:
+        expected_commitment = hashlib.sha256(
+            request['query_token']
+            + request['dataset_id'].encode('utf-8')
+            + str(request['querier_id']).encode('utf-8')
+        ).digest()
+        if request['request_commitment'] != expected_commitment:
+            raise ValueError('query request commitment mismatch')
+        if request['querier_id'] not in header.get('encapsulations', {}):
+            raise ValueError('unauthorized querier for request package')
+
+    def _package_authorized_result(self, wrapped_result: bytes, query_token: bytes) -> Dict[str, Any]:
+        payload_size = self._wrapped_payload_size(wrapped_result)
+        return {
+            'wrapped_result': wrapped_result,
+            'result_commitment': hashlib.sha256(self._hash_wrapped_result(wrapped_result) + query_token).digest(),
+            'payload_size_bytes': payload_size,
+        }
+
+    def _recover_authorized_result(self, result_key: bytes, result_package: Dict[str, Any], query_token: bytes) -> List[Any]:
+        expected_commitment = hashlib.sha256(
+            self._hash_wrapped_result(result_package['wrapped_result']) + query_token
+        ).digest()
+        if result_package['result_commitment'] != expected_commitment:
+            raise ValueError('authorized result commitment mismatch')
+        return self._recover_result_package(result_key, result_package['wrapped_result'])
+
+    def _iter_recovered_authorized_result(self, result_key: bytes, result_package: Dict[str, Any], query_token: bytes):
+        expected_commitment = hashlib.sha256(
+            self._hash_wrapped_result(result_package['wrapped_result']) + query_token
+        ).digest()
+        if result_package['result_commitment'] != expected_commitment:
+            raise ValueError('authorized result commitment mismatch')
+        yield from self._iter_recovered_result_package(result_key, result_package['wrapped_result'])
+
+    def _hash_wrapped_result(self, wrapped_result: Any) -> bytes:
+        if isinstance(wrapped_result, dict) and wrapped_result.get('format') == self._RESULT_PACKAGE_FORMAT:
+            hasher = hashlib.sha256()
+            header = wrapped_result['header']
+            hasher.update(struct.pack('>I', len(header)))
+            hasher.update(header)
+            for wrapped_chunk in wrapped_result['record_chunks']:
+                hasher.update(struct.pack('>I', len(wrapped_chunk)))
+                hasher.update(wrapped_chunk)
+            return hasher.digest()
+        if isinstance(wrapped_result, bytes):
+            return hashlib.sha256(wrapped_result).digest()
+        return hashlib.sha256(pickle.dumps(wrapped_result, protocol=pickle.HIGHEST_PROTOCOL)).digest()
+
+    def _protect_result_package(self, result_key: bytes, encrypted_results: List[Any]) -> Any:
+        wrapped_result = self._init_result_package(result_key)
+        for item in encrypted_results:
+            self._append_result_ciphertext(result_key, wrapped_result, item)
+        return self._finalize_result_package(result_key, wrapped_result)
+
+    def _init_result_package(self, result_key: bytes) -> Dict[str, Any]:
+        return {
+            'format': self._RESULT_PACKAGE_FORMAT,
+            'header': None,
+            'record_chunks': [],
+            'result_count': 0,
+        }
+
+    def _append_result_ciphertext(self, result_key: bytes, wrapped_result: Dict[str, Any], ciphertext: Any) -> None:
+        blob = self.he.serialize_ciphertext(ciphertext)
+        wrapped_result['record_chunks'].append(self._encrypt_payload(result_key, blob))
+        wrapped_result['result_count'] += 1
+
+    def _finalize_result_package(self, result_key: bytes, wrapped_result: Dict[str, Any]) -> Dict[str, Any]:
+        header_bytes = pickle.dumps({
+            'format': self._RESULT_PACKAGE_FORMAT,
+            'result_count': wrapped_result['result_count'],
+            'chunk_mode': 'individual_ciphertexts',
+        }, protocol=pickle.HIGHEST_PROTOCOL)
+        wrapped_result['header'] = self._encrypt_payload(result_key, header_bytes)
+        wrapped_result.pop('result_count', None)
+        return wrapped_result
+
+    def _recover_result_package(self, result_key: bytes, wrapped_result: Any) -> List[Any]:
+        return list(self._iter_recovered_result_package(result_key, wrapped_result))
+
+    def _iter_recovered_result_package(self, result_key: bytes, wrapped_result: Any):
+        if isinstance(wrapped_result, dict) and wrapped_result.get('format') == self._RESULT_PACKAGE_FORMAT:
+            header_bytes = self._decrypt_payload(result_key, wrapped_result['header'])
+            header = pickle.loads(header_bytes)
+            if header.get('format') != self._RESULT_PACKAGE_FORMAT:
+                raise ValueError('unexpected query result package format')
+
+            chunk_mode = header.get('chunk_mode', 'packed_record_chunks')
+            for wrapped_chunk in wrapped_result['record_chunks']:
+                chunk_bytes = self._decrypt_payload(result_key, wrapped_chunk)
+                if chunk_mode == 'individual_ciphertexts':
+                    yield self.he.deserialize_ciphertext(chunk_bytes)
+                    continue
+                for blob in self._deserialize_record_chunk(chunk_bytes):
+                    yield self.he.deserialize_ciphertext(blob)
+            return
+
+        payload_bytes = self._decrypt_payload(result_key, wrapped_result)
+        payload = pickle.loads(payload_bytes)
+        for blob in payload['ciphertexts']:
+            yield self.he.deserialize_ciphertext(blob)
+
+    @staticmethod
+    def _evaluate_decision_tree_plain(model: Dict[str, Any], plain_record: List[float]) -> float:
+        nodes = model.get('nodes', [])
+        node_map = {node.get('id'): node for node in nodes}
+        current_id = model.get('root', 0)
+        pred = 0.0
+        depth = 0
+        while depth < 10 and current_id in node_map:
+            node = node_map[current_id]
+            if 'value' in node:
+                pred = float(node['value'])
+                break
+            feature_idx = int(node.get('feature', 0))
+            threshold = float(node.get('threshold', 0.0))
+            feature_val = float(plain_record[feature_idx]) if feature_idx < len(plain_record) else 0.0
+            current_id = node.get('left') if feature_val <= threshold else node.get('right')
+            depth += 1
+        return pred
+
+    @staticmethod
+    def _evaluate_neural_network_plain(model: Dict[str, Any], plain_record: List[float]) -> float:
+        values = [float(v) for v in plain_record]
+        layers = model.get('layers') or [
+            {
+                'weights': model.get('weights', []),
+                'bias': model.get('bias', []),
+                'weights_shape': (int(model.get('output_dim', 10) or 10), len(plain_record)),
+                'activation': 'linear',
+            }
+        ]
+
+        for layer in layers:
+            weights = layer.get('weights', [])
+            bias = layer.get('bias', [])
+            weights_shape = tuple(layer.get('weights_shape', (int(model.get('output_dim', 10) or 10), len(values))))
+            output_dim = int(weights_shape[0]) if len(weights_shape) > 0 else len(bias)
+            input_dim = int(weights_shape[1]) if len(weights_shape) > 1 else len(values)
+            record_vec = values[:input_dim]
+            if len(record_vec) < input_dim:
+                record_vec.extend([0.0] * (input_dim - len(record_vec)))
+
+            next_values = []
+            for output_index in range(output_dim):
+                start_idx = output_index * input_dim
+                row_weights = weights[start_idx:start_idx + input_dim] if len(weights) > start_idx else []
+                value = sum(float(weight) * record_vec[idx] for idx, weight in enumerate(row_weights) if idx < input_dim)
+                if output_index < len(bias):
+                    value += float(bias[output_index])
+                if layer.get('activation', 'linear') == 'square':
+                    value = value * value
+                next_values.append(value)
+            values = next_values
+        return values[0] if values else 0.0
 
     @staticmethod
     def _serialize_package_metadata(policy: List[int], metadata: Optional[Dict]) -> bytes:
@@ -363,7 +591,23 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
         }
         return c_m, None, dataset_id
 
-    def execute_query(self, querier_id: int, owner_id: int, dataset_id: str, model: Any) -> Optional[List[float]]:
+    def prepare_query_model(self, querier_id: int, model: Any) -> Any:
+        """Encrypt the model once and reuse it across repeated queries."""
+        model_encrypt_start = time.perf_counter()
+        if isinstance(model, list) or (isinstance(model, dict) and model.get('type') == 'neural_network'):
+            encrypted_model = self.encrypt_model(model)
+        elif isinstance(model, dict) and model.get('type') == 'decision_tree':
+            encrypted_model = {
+                'type': 'decision_tree',
+                'encrypted': True,
+                'nodes': model.get('nodes', []),
+            }
+        else:
+            encrypted_model = self.encrypt_model([0.0])
+        self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
+        return encrypted_model
+
+    def execute_query(self, querier_id: int, owner_id: int, dataset_id: str, model: Any, prepared_model: Any = None) -> Optional[List[float]]:
         check_start = time.perf_counter()
         header = self.ciphertext_headers.get((owner_id, dataset_id))
         has_access = bool(header and querier_id in header['encapsulations'])
@@ -419,13 +663,22 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
         token_elapsed = time.perf_counter() - token_start
 
         retrieval_size = self._wrapped_payload_size(wrapped_payload)
-        req_payload = {
-            'querier_id': querier_id,
-            'owner_id': owner_id,
-            'dataset_id': dataset_id,
-            'query_token': query_token,
-            'encrypted_model': model,
-            'model_type': model.get('type', 'dot_product') if isinstance(model, dict) else 'dot_product',
+
+        encrypted_model = prepared_model if prepared_model is not None else self.prepare_query_model(querier_id, model)
+
+        req_payload = self._build_query_request(
+            querier_id,
+            owner_id,
+            dataset_id,
+            query_token,
+            encrypted_model,
+            model,
+        )
+        self._authorize_query_request(req_payload, header)
+        self.authorized_query_log[(querier_id, owner_id, dataset_id)] = {
+            'request_commitment': req_payload['request_commitment'],
+            'model_type': req_payload['model_type'],
+            'query_time': time.time(),
         }
         req_size = self._safe_obj_size(req_payload)
         self.metrics['communication_sizes'].append({
@@ -433,63 +686,72 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
             'size': req_size,
             'records': len(payload['encrypted_records']),
         })
-
-        start_query = time.perf_counter()
         encrypted_data = payload['encrypted_records']
-        encrypted_model = self.encrypt_model(model)
-        model_encrypt_time = time.perf_counter() - start_query
-        self.metrics['encrypt_times'].append(model_encrypt_time)
-
+        result_recovery_key = self._derive_result_recovery_key(
+            querier_id,
+            dataset_id,
+            query_token,
+            recovered_envelope_key,
+        )
         query_compute_start = time.perf_counter()
-        results = []
+        wrapped_result = self._init_result_package(result_recovery_key)
+        result_count = 0
         if isinstance(model, list):
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data):
                 try:
-                    results.append(enc_record.dot(encrypted_model))
+                    enc_result = enc_record.dot(encrypted_model)
                 except Exception:
-                    results.append(self.he.encrypt([0.0]))
+                    enc_result = self.he.encrypt([0.0])
+                self._append_result_ciphertext(result_recovery_key, wrapped_result, enc_result)
+                encrypted_data[index] = None
+                result_count += 1
         elif isinstance(model, dict) and model.get('type') == 'decision_tree':
-            nodes = model.get('nodes', [])
-            node_map = {n.get('id'): n for n in nodes}
-            root_id = model.get('root', 0)
-            for enc_record in encrypted_data:
+            for index, enc_record in enumerate(encrypted_data):
                 try:
                     plain_record = self.he.decrypt(enc_record)
                     if not isinstance(plain_record, list):
                         plain_record = [float(plain_record)]
-                    current_id = root_id
-                    pred = 0.0
-                    depth = 0
-                    while depth < 10 and current_id in node_map:
-                        node = node_map[current_id]
-                        if 'value' in node:
-                            pred = float(node['value'])
-                            break
-                        feature_idx = int(node.get('feature', 0))
-                        threshold = float(node.get('threshold', 0.0))
-                        feature_val = float(plain_record[feature_idx]) if feature_idx < len(plain_record) else 0.0
-                        current_id = node.get('left') if feature_val <= threshold else node.get('right')
-                        depth += 1
-                    results.append(self.he.encrypt([pred]))
+                    pred = self._evaluate_decision_tree_plain(model, plain_record)
+                    enc_result = self.he.encrypt([pred])
                 except Exception:
-                    results.append(self.he.encrypt([0.0]))
+                    enc_result = self.he.encrypt([0.0])
+                self._append_result_ciphertext(result_recovery_key, wrapped_result, enc_result)
+                encrypted_data[index] = None
+                result_count += 1
+        elif isinstance(model, dict) and model.get('type') == 'neural_network':
+            for index, enc_record in enumerate(encrypted_data):
+                try:
+                    plain_record = self.he.decrypt(enc_record)
+                    if not isinstance(plain_record, list):
+                        plain_record = [float(plain_record)]
+                    pred = self._evaluate_neural_network_plain(model, plain_record)
+                    enc_result = self.he.encrypt([pred])
+                except Exception:
+                    enc_result = self.he.encrypt([0.0])
+                self._append_result_ciphertext(result_recovery_key, wrapped_result, enc_result)
+                encrypted_data[index] = None
+                result_count += 1
         else:
-            for _ in encrypted_data:
-                results.append(self.he.encrypt([0.0]))
+            for index, _ in enumerate(encrypted_data):
+                self._append_result_ciphertext(result_recovery_key, wrapped_result, self.he.encrypt([0.0]))
+                encrypted_data[index] = None
+                result_count += 1
 
         query_time = time.perf_counter() - query_compute_start + token_elapsed
         self.metrics['query_times'].append(query_time)
 
-        response_size = retrieval_size + self._safe_obj_size(results, fallback=max(1, len(results)) * 1024)
+        wrapped_result = self._finalize_result_package(result_recovery_key, wrapped_result)
+        result_package = self._package_authorized_result(wrapped_result, query_token)
+        response_size = retrieval_size + self._safe_obj_size(result_package)
         self.metrics['communication_sizes'].append({
             'type': 'decrypt',
             'size': response_size,
-            'records': len(results),
+            'records': result_count,
         })
 
         start_decrypt = time.perf_counter()
         decrypted_results = []
-        for enc_result in results:
+        for enc_result in self._iter_recovered_authorized_result(result_recovery_key, result_package, query_token):
             try:
                 dec = self.he.decrypt(enc_result)
                 decrypted_results.append(dec[0] if isinstance(dec, list) and dec else float(dec))
@@ -500,7 +762,10 @@ class NaiveCCS23ExperimentWrapper(ServerSchemeExperimentWrapper):
 
         print(f"      Naive CCS-2023 封装恢复: {token_elapsed*1000:.2f} ms")
         print(f"      完整密文校验: {verify_elapsed*1000:.2f} ms")
-        print(f"      模型加密: {model_encrypt_time*1000:.2f} ms")
+        if prepared_model is None:
+            print(f"      模型加密: {self.metrics['encrypt_times'][-1]*1000:.2f} ms")
+        else:
+            print(f"      模型加密: 0.00 ms (复用已准备模型)")
         print(f"      查询计算: {(query_time-token_elapsed)*1000:.2f} ms")
-        print(f"      结果解密: {decrypt_time*1000:.2f} ms")
+        print(f"      授权结果恢复: {decrypt_time*1000:.2f} ms")
         return decrypted_results

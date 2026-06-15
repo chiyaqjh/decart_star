@@ -150,20 +150,40 @@ class RevokeExperimentRunner:
                 }
 
         output_dim = 10
+        hidden_dim = 16
         input_dim = self.config.record_dim
         weight_scale = min(0.1, 1.0 / np.sqrt(max(1, input_dim)))
-        weights_matrix = np.random.randn(output_dim, input_dim) * weight_scale
-        bias = np.random.randn(output_dim) * weight_scale
+        hidden_weights = np.random.randn(hidden_dim, input_dim) * weight_scale
+        hidden_bias = np.random.randn(hidden_dim) * weight_scale
+        output_weights = np.random.randn(output_dim, hidden_dim) * weight_scale
+        output_bias = np.random.randn(output_dim) * weight_scale
 
         return {
             "type": "neural_network",
-            "format": "single_layer",
+            "format": "mlp_1hidden",
             "input_dim": input_dim,
+            "hidden_dim": hidden_dim,
             "output_dim": output_dim,
-            "weights": weights_matrix.flatten().tolist(),
-            "bias": bias.tolist(),
-            "weights_shape": (output_dim, input_dim),
-            "bias_shape": (output_dim,),
+            "layers": [
+                {
+                    "layer_idx": 0,
+                    "layer_type": "linear",
+                    "activation": "square",
+                    "weights": hidden_weights.flatten().tolist(),
+                    "bias": hidden_bias.tolist(),
+                    "weights_shape": (hidden_dim, input_dim),
+                    "bias_shape": (hidden_dim,),
+                },
+                {
+                    "layer_idx": 1,
+                    "layer_type": "linear",
+                    "activation": "linear",
+                    "weights": output_weights.flatten().tolist(),
+                    "bias": output_bias.tolist(),
+                    "weights_shape": (output_dim, hidden_dim),
+                    "bias_shape": (output_dim,),
+                },
+            ],
         }
 
     def build_user_layout(self) -> Dict[str, Any]:

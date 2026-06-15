@@ -16,6 +16,10 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from config import Config
+from experiments.datasets import get_dataset_spec, load_experiment_records
+from experiments.models.model_loader import load_trained_experiment_model
+from experiments.shared_synthetic import generate_synthetic_decision_tree, generate_synthetic_dot_model, generate_synthetic_records, generate_synthetic_shallow_mlp
+from experiments.result_paths import resolve_results_dir
 from experiments.naive_ccs23.wrapper import NaiveCCS23ExperimentWrapper
 
 
@@ -25,18 +29,30 @@ class ExperimentConfig:
     n: int = Config.BLOCK_SIZE
     num_records: int = Config.EXPERIMENT_NUM_RECORDS
     record_dim: int = Config.EXPERIMENT_RECORD_DIM
+    dataset: str = 'synthetic'
+    mnist_data_dir: str = 'data'
+    model_source: str = 'synthetic'
+    trained_models_dir: str = 'experiments/models/trained'
     model_types: List[str] = None
     policy_size: int = Config.EXPERIMENT_POLICY_SIZE
     num_queriers: int = 1
     num_runs: int = Config.EXPERIMENT_NUM_RUNS
     save_results: bool = True
-    results_dir: str = "experiments/results/naive_ccs23"
+    results_dir: Optional[str] = None
 
     def __post_init__(self):
         if self.model_types is None:
             self.model_types = ['dot', 'decision_tree', 'neural_network']
         if self.num_queriers < 1:
             raise ValueError('num_queriers 必须至少为 1')
+        if self.dataset not in {'synthetic', 'mnist', 'uci_har'}:
+            raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
+        dataset_spec = get_dataset_spec(self.dataset)
+        if dataset_spec is not None and self.record_dim != dataset_spec['input_dim']:
+            raise ValueError(f"{self.dataset} experiments require record_dim={dataset_spec['input_dim']}")
+        if self.model_source not in {'synthetic', 'trained'}:
+            raise ValueError("model_source must be 'synthetic' or 'trained'")
+        self.results_dir = resolve_results_dir(self.dataset, "experiments/results/naive_ccs23", "naive_ccs23", self.results_dir)
 
 
 class ExperimentRunner:
@@ -87,41 +103,24 @@ class ExperimentRunner:
         end = '\n' if current >= total else '\r'
         print(f"{label} [{bar}] {current}/{total}", end=end, flush=True)
 
-    def generate_test_data(self) -> Tuple[List[List[float]], List[int]]:
-        data = []
-        for _ in range(self.config.num_records):
-            record = np.random.randn(self.config.record_dim).tolist()
-            max_val = max(abs(min(record)), abs(max(record))) or 1
-            data.append([x / max_val for x in record])
-        return data, []
+    def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
+        if self.config.dataset != 'synthetic':
+            print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
+            return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
 
-    def generate_model(self, model_type: str) -> Any:
+        return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
+
+    def generate_model(self, model_type: str, run_id: int = 0) -> Any:
+        if self.config.model_source == 'trained':
+            print(f"   加载训练好的 {model_type} 模型...")
+            return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
+
         if model_type == 'dot':
-            model = np.random.randn(self.config.record_dim).tolist()
-            max_val = max(abs(min(model)), abs(max(model))) or 1
-            return [x / max_val for x in model]
+            return generate_synthetic_dot_model(self.config.record_dim, run_id)
         if model_type == 'decision_tree':
-            return {
-                'type': 'decision_tree',
-                'root': 0,
-                'nodes': [
-                    {'id': 0, 'feature': 0, 'threshold': 0.5, 'left': 1, 'right': 2},
-                    {'id': 1, 'value': 0.0},
-                    {'id': 2, 'value': 1.0},
-                ],
-            }
+            return generate_synthetic_decision_tree()
         if model_type == 'neural_network':
-            output_dim = 10
-            input_dim = self.config.record_dim
-            weights_matrix = np.random.randn(output_dim, input_dim) * 0.1
-            bias = np.random.randn(output_dim) * 0.1
-            return {
-                'type': 'neural_network',
-                'input_dim': input_dim,
-                'output_dim': output_dim,
-                'weights': weights_matrix.flatten().tolist(),
-                'bias': bias.tolist(),
-            }
+            return generate_synthetic_shallow_mlp(self.config.record_dim, run_id)
         raise ValueError(f"未知模型类型: {model_type}")
 
     def register_all_users(self, wrapper: NaiveCCS23ExperimentWrapper, policy: List[int]):
@@ -154,17 +153,19 @@ class ExperimentRunner:
             self.register_all_users(wrapper, policy)
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
 
-            data, _ = self.generate_test_data()
-            model = self.generate_model(model_type)
+            data, _ = self.generate_test_data(run_id)
+            model = self.generate_model(model_type, run_id)
 
             print("\n 加密数据集...")
             _, _, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
+
+            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') else None
 
             print(f"\n 执行查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
             results = None
             total_results = 0
             for index in range(1, query_repetitions + 1):
-                current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model)
+                current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model, prepared_model=prepared_model)
                 if current_results is not None:
                     results = current_results
                     total_results += len(current_results)
@@ -395,11 +396,15 @@ if __name__ == '__main__':
     parser.add_argument('--n', type=int, default=Config.BLOCK_SIZE, help='每块用户数')
     parser.add_argument('--num-records', type=int, default=Config.EXPERIMENT_NUM_RECORDS, help='数据记录数')
     parser.add_argument('--record-dim', type=int, default=Config.EXPERIMENT_RECORD_DIM, help='记录维度')
+    parser.add_argument('--dataset', choices=['synthetic', 'mnist', 'uci_har'], default='synthetic', help='数据集来源')
+    parser.add_argument('--mnist-data-dir', type=str, default='data', help='MNIST 缓存目录')
+    parser.add_argument('--model-source', choices=['synthetic', 'trained'], default='synthetic', help='模型来源')
+    parser.add_argument('--trained-models-dir', type=str, default='experiments/models/trained', help='训练模型目录')
     parser.add_argument('--policy-size', type=int, default=Config.EXPERIMENT_POLICY_SIZE, help='策略大小')
     parser.add_argument('--num-queriers', type=int, default=1, help='真实查询者数量')
     parser.add_argument('--num-runs', type=int, default=Config.EXPERIMENT_NUM_RUNS, help='重复运行次数')
     parser.add_argument('--model-types', nargs='+', default=['dot', 'decision_tree', 'neural_network'], help='模型类型列表')
-    parser.add_argument('--results-dir', type=str, default='experiments/results/naive_ccs23', help='结果保存目录')
+    parser.add_argument('--results-dir', type=str, default=None, help='结果保存目录')
     parser.add_argument('--no-save', action='store_true', help='不保存结果')
 
     args = parser.parse_args()
@@ -409,6 +414,10 @@ if __name__ == '__main__':
         n=args.n,
         num_records=args.num_records,
         record_dim=args.record_dim,
+        dataset=args.dataset,
+        mnist_data_dir=args.mnist_data_dir,
+        model_source=args.model_source,
+        trained_models_dir=args.trained_models_dir,
         policy_size=args.policy_size,
         num_queriers=args.num_queriers,
         model_types=args.model_types,
