@@ -31,7 +31,6 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SCHEME_STYLES = {
     'SecPQ': {'edgecolor': '#2E7D32', 'facecolor': '#C8E6C9', 'hatch': '\\'},
-    'Naive_ccs23': {'edgecolor': '#66BB6A', 'facecolor': '#E8F5E9', 'hatch': '--'},
     'plaintext': {'edgecolor': '#1B5E20', 'facecolor': '#DCEDC8', 'hatch': '..'},
     'DeCart': {'edgecolor': '#2196F3', 'facecolor': '#90CAF9', 'hatch': '//'},
     'DeCart*': {'edgecolor': '#FF9800', 'facecolor': '#FFE0B2', 'hatch': 'xx'},
@@ -42,10 +41,9 @@ SCHEME_STYLES = {
 MODEL_CONFIGS = {
     'decision_tree': {
         'output_dir': OUT_DIR,
-        'schemes': ['SecPQ', 'Naive_ccs23', 'plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
+        'schemes': ['SecPQ', 'plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
         'folders': {
             'SecPQ': [DATA_ROOT / 'secpq'],
-            'Naive_ccs23': [DATA_ROOT / 'naive_ccs23'],
             'plaintext': [DATA_ROOT / 'scheme1_ccs23'],
             'DeCart': [DATA_ROOT / 'our_decart'],
             'DeCart*': [DATA_ROOT / 'our_decart_star'],
@@ -55,9 +53,8 @@ MODEL_CONFIGS = {
     },
     'dot': {
         'output_dir': OUT_DIR / 'dot',
-        'schemes': ['Naive_ccs23', 'plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
+        'schemes': ['plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
         'folders': {
-            'Naive_ccs23': [DATA_ROOT / 'naive_ccs23' / 'dot_N10000_n32' / 'q=1'],
             'plaintext': [DATA_ROOT / 'scheme1_ccs23' / 'dot_N10000_n32' / 'q=1'],
             'DeCart': [DATA_ROOT / 'our_decart' / 'dot_N10000_n32' / 'q=1'],
             'DeCart*': [DATA_ROOT / 'our_decart_star' / 'dot_N10000_n32' / 'q=1'],
@@ -67,9 +64,8 @@ MODEL_CONFIGS = {
     },
     'neural_network': {
         'output_dir': OUT_DIR / 'neural_network',
-        'schemes': ['Naive_ccs23', 'plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
+        'schemes': ['plaintext', 'DeCart', 'DeCart*', 'Server', 'Offline'],
         'folders': {
-            'Naive_ccs23': [DATA_ROOT / 'naive_ccs23' / 'neural_network_N10000_n32' / 'q=1'],
             'plaintext': [DATA_ROOT / 'scheme1_ccs23' / 'neural_network_N10000_n32' / 'q=1'],
             'DeCart': [DATA_ROOT / 'our_decart' / 'neural_network_N10000_n32' / 'q=1'],
             'DeCart*': [DATA_ROOT / 'our_decart_star' / 'neural_network_N10000_n32' / 'q=1'],
@@ -84,6 +80,37 @@ FIXED_BLOCK_SIZE = 32
 FIXED_POLICY_SIZE = 32
 FIXED_NUM_RUNS = 1
 RESULT_CACHE = {}
+
+
+def estimate_metric_from_q1(model_name, scheme_name, num_records, record_dim, num_queriers, metric):
+    """Estimate missing q>1 communication from q=1: one upload + repeated check/query/decrypt."""
+    if num_queriers <= 1:
+        return float('nan')
+
+    data_q1 = load_match(model_name, scheme_name, num_records, record_dim, 1)
+    if data_q1 is None:
+        return float('nan')
+
+    upload = metric_for_scheme(data_q1, model_name, 'upload_kb')
+    check = metric_for_scheme(data_q1, model_name, 'check_kb')
+    query = metric_for_scheme(data_q1, model_name, 'query_kb')
+    decrypt = metric_for_scheme(data_q1, model_name, 'decrypt_kb')
+
+    if metric == 'upload_kb':
+        return upload
+    if metric == 'check_kb':
+        return check * num_queriers
+    if metric == 'query_kb':
+        return query * num_queriers
+    if metric == 'decrypt_kb':
+        return decrypt * num_queriers
+    if metric == 'total_kb':
+        parts = [upload, check, query, decrypt]
+        if any(np.isnan(part) for part in parts):
+            return float('nan')
+        return upload + (check + query + decrypt) * num_queriers
+
+    return float('nan')
 
 
 def resolve_folders(model_name, scheme_name, num_queriers):
@@ -236,9 +263,7 @@ def load_match(model_name, scheme_name, num_records, record_dim, num_queriers):
 
 
 def x_values_for_querier(num_queriers):
-    if num_queriers == 1:
-        return [10, 100, 500, 1000, 5000, 10000]
-    return [10, 100, 1000, 5000]
+    return [10, 100, 500, 1000, 5000, 10000]
 
 
 def curve_for_metric(model_name, metric, num_queriers):
@@ -248,7 +273,19 @@ def curve_for_metric(model_name, metric, num_queriers):
     for value in x_values:
         for scheme in schemes:
             data = load_match(model_name, scheme, num_records=value, record_dim=value, num_queriers=num_queriers)
-            curve[scheme].append(metric_for_scheme(data, model_name, metric))
+            if data is not None:
+                curve[scheme].append(metric_for_scheme(data, model_name, metric))
+            else:
+                curve[scheme].append(
+                    estimate_metric_from_q1(
+                        model_name,
+                        scheme,
+                        num_records=value,
+                        record_dim=value,
+                        num_queriers=num_queriers,
+                        metric=metric,
+                    )
+                )
     return x_values, curve
 
 

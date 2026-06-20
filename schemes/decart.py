@@ -579,12 +579,27 @@ class DeCartSystem:
             加密的决策树参数字典
         """
         print(f"\n[Encrypt Decision Tree] 加密决策树模型")
-        
+
         # 转换为DecisionTreeHE
-        if not isinstance(tree_model, DecisionTreeHE):
-            tree = DecisionTreeHE.from_sklearn(tree_model)
-        else:
+        if isinstance(tree_model, DecisionTreeHE):
             tree = tree_model
+        elif isinstance(tree_model, dict) and tree_model.get('type') == 'decision_tree':
+            tree = DecisionTreeHE()
+            for raw_node in tree_model.get('nodes', []):
+                node_id = int(raw_node.get('id', raw_node.get('node_id', 0)))
+                is_leaf = 'value' in raw_node
+                node = DecisionTreeNode(node_id, is_leaf=is_leaf)
+                if is_leaf:
+                    node.value = float(raw_node.get('value', 0.0))
+                else:
+                    node.feature_idx = int(raw_node.get('feature', raw_node.get('feature_idx', 0)))
+                    node.threshold = float(raw_node.get('threshold', 0.0))
+                    node.left_child = raw_node.get('left', raw_node.get('left_child'))
+                    node.right_child = raw_node.get('right', raw_node.get('right_child'))
+                tree.add_node(node)
+            tree.set_root(int(tree_model.get('root', tree_model.get('root_id', 0))))
+        else:
+            tree = DecisionTreeHE.from_sklearn(tree_model)
         
         # 获取可加密参数
         params = tree.get_encryptable_params()

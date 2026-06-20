@@ -211,7 +211,7 @@ class ExperimentRunner:
             # ?
             wrapper.store_dataset(owner_id, ds_id, C_m, sk_h_s)
 
-            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') and model_type in {'dot', 'neural_network'} else None
+            prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') and model_type in {'dot', 'decision_tree', 'neural_network'} else None
             
             # 
             total_results = 0
@@ -254,139 +254,21 @@ class ExperimentRunner:
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'decision_tree':
-                # ?
-                print(f"\nPreparing encrypted decision-tree query...")
-                
-                # 
-                pk_h = wrapper.curator.system.he.public_key
-                encrypt_model_start = time.perf_counter()
-                
-                # ?
-                if hasattr(wrapper.curator.system, 'encrypt_decision_tree'):
-                    print(f"   Encrypting decision-tree model...")
-                    encrypted_model = wrapper.curator.system.encrypt_decision_tree(model, pk_h)
-                else:
-                    # 
-                    print(f"   ...")
-                    if hasattr(model, 'get_encryptable_params'):
-                        params = model.get_encryptable_params()
-                        # 
-                        encrypted_internal = []
-                        for node in params.get('internal_nodes', []):
-                            encrypted_node = {
-                                'node_id': node['node_id'],
-                                'feature_idx': node['feature_idx'],
-                                'threshold': wrapper.curator.system.he.encrypt([node['threshold']]),
-                                'left': node['left'],
-                                'right': node['right']
-                            }
-                            encrypted_internal.append(encrypted_node)
-                        
-                        # 
-                        encrypted_leaves = []
-                        for node in params.get('leaf_nodes', []):
-                            encrypted_node = {
-                                'node_id': node['node_id'],
-                                'value': wrapper.curator.system.he.encrypt([node['value']])
-                            }
-                            encrypted_leaves.append(encrypted_node)
-                        
-                        encrypted_model = {
-                            'type': 'decision_tree',
-                            'internal_nodes': encrypted_internal,
-                            'leaf_nodes': encrypted_leaves,
-                            'root_id': params.get('root_id', 0),
-                            'node_count': params.get('node_count', 0)
-                        }
-                        print(f"     Encrypted internal nodes: {len(encrypted_internal)}, leaves: {len(encrypted_leaves)}")
-                    else:
-                        encrypted_model = {
-                            'type': 'decision_tree',
-                            'encrypted': True,
-                            'nodes': model.get('nodes', []) if isinstance(model, dict) else []
-                        }
-                        print(f"     Using fallback encrypted decision-tree structure")
-                wrapper.metrics['encrypt_times'].append(time.perf_counter() - encrypt_model_start)
-                
-                query_times = []
-                decrypt_times = []
+                print(f"\nExecuting decision-tree queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
                 for repetition_idx in range(query_repetitions):
-                    querier = wrapper.create_querier(active_querier_id)
-                    check_start = time.perf_counter()
-                    C_M = querier.check_access(C_m)
-                    wrapper.metrics['check_times'].append(time.perf_counter() - check_start)
-                    check_req_payload = {
-                        'querier_id': active_querier_id,
-                        'owner_id': owner_id,
-                        'dataset_id': C_m.get('dataset_id') if isinstance(C_m, dict) else None,
-                    }
-                    check_req_size = wrapper._safe_obj_size(check_req_payload, fallback=32)
-                    check_res_size = wrapper._safe_obj_size(C_M) if C_M is not None else 0
-                    wrapper.metrics['communication_sizes'].append({
-                        'type': 'check',
-                        'size': check_req_size + check_res_size,
-                        'request_size': check_req_size,
-                        'response_size': check_res_size,
-                        'records': 0
-                    })
-
-                    if C_M is None:
-                        print(f"      Access denied for querier={active_querier_id}")
-                        return None
-
-                    C_M['encrypted_model'] = encrypted_model
-                    C_M['model_type'] = 'decision_tree'
-                    C_M['access_granted'] = True
-
-                    req_payload = {
-                        'querier_id': active_querier_id,
-                        'owner_id': owner_id,
-                        'dataset_id': ds_id,
-                        'encrypted_model': C_M.get('encrypted_model'),
-                        'model_type': C_M.get('model_type')
-                    }
-                    req_size = wrapper._safe_obj_size(req_payload)
-                    wrapper.metrics['communication_sizes'].append({
-                        'type': 'query',
-                        'size': req_size,
-                        'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
-                    })
-
-                    if 'sk_h_u' not in C_M:
-                        C_M['sk_h_u'] = b'demo_secret_key'
-
-                    print(f"   Executing decision-tree query {repetition_idx + 1}/{query_repetitions}, querier={active_querier_id}")
-                    start_query = time.perf_counter()
-                    ER = wrapper.curator.system.query(C_M, C_m, sk_h_s)
-                    single_query_time = time.perf_counter() - start_query
-                    query_times.append(single_query_time)
-                    print(f"   Query time: {single_query_time*1000:.2f} ms")
-
-                    if ER is not None:
-                        res_size = wrapper._safe_obj_size(ER)
-                        wrapper.metrics['communication_sizes'].append({
-                            'type': 'decrypt',
-                            'size': res_size,
-                            'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
-                        })
-
-                        start_decrypt = time.perf_counter()
-                        current_results = wrapper.curator.system.decrypt(C_M['sk_h_u'], ER)
-                        single_decrypt_time = time.perf_counter() - start_decrypt
-                        decrypt_times.append(single_decrypt_time)
-                        if current_results is not None:
-                            results = current_results
-                            total_results += len(current_results)
-                        print(f"   : {single_decrypt_time*1000:.2f} ms")
-                        print(f"   : {len(current_results) if current_results else 0}")
-                        if current_results:
-                            print(f"   : {current_results[:3]}")
+                    query_index = repetition_idx + 1
+                    print(f"   [Query {query_index}/{query_repetitions}] Decision-tree query start, querier={active_querier_id}")
+                    current_results = wrapper.execute_query(active_querier_id, owner_id, ds_id, model, prepared_model=prepared_model)
+                    if current_results is not None:
+                        results = current_results
+                        total_results += len(current_results)
+                        print(f"   [Query {query_index}/{query_repetitions}] Decision-tree query done, results={len(current_results)}")
                     else:
-                        print(f"      ")
+                        print(f"   [Query {query_index}/{query_repetitions}] Decision-tree query returned no results")
 
-                query_time = float(np.sum(query_times)) if query_times else 0
-                decrypt_time = float(np.sum(decrypt_times)) if decrypt_times else 0
+                query_time = float(np.sum(wrapper.metrics['query_times'])) if wrapper.metrics['query_times'] else 0
+                decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
             
             else:
                 print(f"      : {model_type}")

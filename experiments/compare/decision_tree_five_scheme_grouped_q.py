@@ -20,26 +20,34 @@ OUTPUT_DIR = get_pic_accuracy_dir(str(PROJECT_ROOT))
 SCHEMES = [
     ('DeCart', 'our_decart'),
     ('DeCart*', 'our_decart_star'),
-    ('Naive CCS-2023', 'naive_ccs23'),
+    ('scheme_ccs', 'naive_ccs23'),
     ('Server', 'scheme2_server'),
     ('Offline', 'scheme3_offline'),
+    ('SecPQ', 'secpq'),
 ]
 
 SCHEME_STYLE = {
     'DeCart': {'edgecolor': '#339AF0', 'facecolor': '#A9D6FF', 'hatch': '////'},
     'DeCart*': {'edgecolor': '#FF9800', 'facecolor': '#FFE0B2', 'hatch': '....'},
-    'Naive CCS-2023': {'edgecolor': '#2E7D32', 'facecolor': '#C8E6C9', 'hatch': 'xxxx'},
+    'scheme_ccs': {'edgecolor': '#2E7D32', 'facecolor': '#C8E6C9', 'hatch': 'xxxx'},
     'Server': {'edgecolor': '#8E24AA', 'facecolor': '#E1BEE7', 'hatch': '++'},
     'Offline': {'edgecolor': '#C62828', 'facecolor': '#FFCDD2', 'hatch': '\\\\'},
+    'SecPQ': {'edgecolor': '#8C564B', 'facecolor': '#D7CCC8', 'hatch': '////+'},
 }
 
 Q_LEVELS = [1, 100]
 
 
 def resolve_result_dir(folder: str, q_level: int) -> Path:
-    if q_level == 100 and folder in {'our_decart', 'our_decart_star'}:
-        return RESULT_ROOT / folder / 'decision_tree' / 'q=100'
-    return RESULT_ROOT / folder
+    candidates = [
+        RESULT_ROOT / folder / 'decision_tree' / f'q={q_level}',
+        RESULT_ROOT / folder / f'q={q_level}',
+        RESULT_ROOT / folder,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[-1]
 
 
 def first_metric(model_block: dict, key: str) -> float:
@@ -116,7 +124,7 @@ def add_grouped_bars(ax, sizes, scheme_labels, value_map, ylabel, title):
 def make_plot(summary, common_sizes) -> Path:
     scheme_labels = [label for label, _ in SCHEMES]
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    fig.suptitle('Decision Tree Comparison Across Sizes (N=10000, n=32)', fontsize=18)
+    fig.suptitle('Decision Tree Comparison Across Sizes (N=10000, n=32, 6 schemes)', fontsize=18)
 
     for row, q_level in enumerate(Q_LEVELS):
         sizes = common_sizes[q_level]
@@ -134,7 +142,7 @@ def make_plot(summary, common_sizes) -> Path:
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper center', ncol=5, frameon=True, bbox_to_anchor=(0.5, 0.995))
     plt.tight_layout(rect=[0, 0, 1, 0.94])
-    out = single_output_path(OUTPUT_DIR, 'decision_tree_five_scheme_grouped_q', 'png')
+    out = single_output_path(OUTPUT_DIR, 'decision_tree_six_scheme_grouped_q', 'png')
     plt.savefig(out, dpi=180, bbox_inches='tight')
     plt.close(fig)
     return out
