@@ -30,6 +30,9 @@ data/MNIST/raw/
 experiments/results/**/*.json
 experiments/results/**/*.pkl
 experiments/results/json_archive/
+experiments/results/data_new/
+experiments/results/data_past/
+paper/
 
 # Security-sensitive material
 keys/
