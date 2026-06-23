@@ -1,8 +1,4 @@
 # decart/experiments/our_decart_star/wrapper.py
-"""
-DeCart* 方案实验包装器
-用于对比实验的标准化接口
-"""
 
 import sys
 import os
@@ -11,7 +7,7 @@ import pickle
 from typing import Dict, List, Tuple, Any, Optional
 import numpy as np
 
-# 添加项目根目录到路径
+# Add the project root directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
 if parent_dir not in sys.path:
@@ -25,26 +21,16 @@ from schemes.decart_star import DeCartStarParams
 
 
 class DeCartStarExperimentWrapper:
-    """
-    DeCart* 方案实验包装器
-    提供标准化的接口用于对比实验
-    """
     
     def __init__(self, N: int = 64, n: int = 16):
-        """
-        初始化实验环境
-        
-        参数:
-            N: 最大用户数
-            n: 每块用户数
-        """
+
         self.params = DeCartStarParams(N=N, n=n)
         self.curator = None
         self.db_server = None
         self.owners = {}
         self.queriers = {}
         
-        # 实验数据
+        # Experiment metrics
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -58,7 +44,7 @@ class DeCartStarExperimentWrapper:
         }
 
     def _safe_obj_size(self, obj: Any, fallback: int = 1024) -> int:
-        """稳健估算对象字节数，优先使用真实序列化大小。"""
+            
         seen_ids = set()
 
         def _measure(x: Any, depth: int = 0) -> int:
@@ -110,7 +96,6 @@ class DeCartStarExperimentWrapper:
         return size if size > 0 else fallback
 
     def get_auxiliary_sizes(self) -> Dict[str, int]:
-        """获取 CRS / pp / aux 等辅助参数规模快照（字节）。"""
         zero_sizes = {
             'crs_size_bytes': 0,
             'pp_size_bytes': 0,
@@ -138,12 +123,6 @@ class DeCartStarExperimentWrapper:
         }
     
     def setup(self) -> float:
-        """
-        初始化系统
-        
-        返回:
-            setup_time: 初始化耗时
-        """
         start = time.perf_counter()
         
         self.curator = KeyCurator(scheme="decart_star", params=self.params)
@@ -158,16 +137,11 @@ class DeCartStarExperimentWrapper:
         elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
         
-        print(f" DeCart* 实验环境初始化完成: {elapsed:.4f}秒")
+        print(f" DeCart* experiment environment initialized: {elapsed:.4f}s")
         return elapsed
     
     def register_user(self, user_id: int) -> Tuple[int, Any]:
-        """
-        注册用户
-        
-        返回:
-            (sk, pk) 密钥对
-        """
+
         keygen_start = time.perf_counter()
         sk, pk, pap = self.curator.generate_user_key(user_id)
         keygen_elapsed = time.perf_counter() - keygen_start
@@ -182,7 +156,6 @@ class DeCartStarExperimentWrapper:
         return sk, pk
     
     def create_owner(self, owner_id: int) -> DataOwner:
-        """创建数据所有者"""
         if owner_id not in self.owners:
             owner = DataOwner(
                 owner_id=owner_id,
@@ -193,7 +166,7 @@ class DeCartStarExperimentWrapper:
         return self.owners[owner_id]
     
     def create_querier(self, querier_id: int) -> DataQuerier:
-        """创建数据查询者"""
+ 
         if querier_id not in self.queriers:
             querier = DataQuerier(
                 querier_id=querier_id,
@@ -208,26 +181,21 @@ class DeCartStarExperimentWrapper:
                        data: List[List[float]],
                        policy: List[int],
                        metadata: Optional[Dict] = None) -> Tuple[Dict, Any, str]:
-        """
-        加密数据集 - 测量加密时间和密文大小
-        
-        返回:
-            (C_m, sk_h_s, dataset_id)
-        """
+
         owner = self.create_owner(owner_id)
         
-        # 测量加密时间
+        # Measure encryption time
         start = time.perf_counter()
         C_m, sk_h_s, ds_id = owner.encrypt_data(data, policy, metadata)
         elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
         
-        # 测量密文大小
+        # Measure ciphertext size
         try:
             import pickle
             size = len(pickle.dumps(C_m))
         except (TypeError, pickle.PicklingError):
-            # 估算大小
+            # Estimate size
             size = len(data) * 1024 * 1024  # 1MB per record
         
         self.metrics['communication_sizes'].append({
@@ -236,12 +204,12 @@ class DeCartStarExperimentWrapper:
             'records': len(data)
         })
         
-        print(f"    加密时间: {elapsed*1000:.2f} ms, 密文大小: {size/1024:.2f} KB")
+        print(f"    Encryption time: {elapsed*1000:.2f} ms, ciphertext size: {size/1024:.2f} KB")
         
         return C_m, sk_h_s, ds_id
     
     def store_dataset(self, owner_id: int, dataset_id: str, C_m: Dict, sk_h_s: Any):
-        """存储数据集到数据库服务器"""
+    
         self.db_server.store_dataset(owner_id, dataset_id, C_m, sk_h_s)
     
     def execute_query(self,
@@ -250,20 +218,15 @@ class DeCartStarExperimentWrapper:
                      dataset_id: str,
                      model: Any,
                      prepared_model: Optional[Dict[str, Any]] = None) -> Optional[List[float]]:
-        """
-        执行查询 - 支持多种模型类型
-        
-        返回:
-            查询结果
-        """
+
         querier = self.create_querier(querier_id)
         
-        # 获取数据集
+        # Get dataset
         C_m, sk_h_s = self.db_server.get_dataset(owner_id, dataset_id)
         if C_m is None:
             return None
         
-        # 检查权限
+        # Check access
         check_start = time.perf_counter()
         C_M = querier.check_access(C_m)
         self.metrics['check_times'].append(time.perf_counter() - check_start)
@@ -296,7 +259,7 @@ class DeCartStarExperimentWrapper:
             if prepared_model.get('model_dim') is not None:
                 C_M['model_dim'] = prepared_model.get('model_dim')
 
-        # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        # Query-request stage communication: unified accounting for packets sent to the server
         req_payload = {
             'querier_id': querier_id,
             'owner_id': owner_id,
@@ -311,13 +274,13 @@ class DeCartStarExperimentWrapper:
             'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
         })
         
-        # 测量查询时间
+        # Measure query time
         start_query = time.perf_counter()
         ER = self.curator.system.query(C_M, C_m, sk_h_s)
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
 
-        # 返回包阶段通信量：服务器返回的加密结果 ER
+        # Response-packet stage communication: encrypted result ER returned by the server
         res_size = self._safe_obj_size(ER)
         self.metrics['communication_sizes'].append({
             'type': 'decrypt',
@@ -325,18 +288,17 @@ class DeCartStarExperimentWrapper:
             'records': len(C_m.get('c6_i', [])) if isinstance(C_m, dict) else 0
         })
         
-        # 测量解密时间
+        # Measure decryption time
         start_decrypt = time.perf_counter()
         results = self.curator.system.decrypt(C_M['sk_h_u'], ER)
         decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
-        print(f"    查询时间: {query_time*1000:.2f} ms, 解密时间: {decrypt_time*1000:.2f} ms")
+        print(f"    Query time: {query_time*1000:.2f} ms, decryption time: {decrypt_time*1000:.2f} ms")
         
         return results
 
     def prepare_query_model(self, querier_id: int, model: Any) -> Dict[str, Any]:
-        """Prepare a reusable encrypted model package for repeated queries."""
         querier = self.create_querier(querier_id)
         model_encrypt_start = time.perf_counter()
 
@@ -357,7 +319,7 @@ class DeCartStarExperimentWrapper:
                 'model_type': 'decision_tree',
             }
         else:
-            raise TypeError(f"不支持的模型类型: {type(model)}")
+            raise TypeError(f"Unsupported model type: {type(model)}")
 
         self.metrics['encrypt_times'].append(time.perf_counter() - model_encrypt_start)
         return {
@@ -367,7 +329,6 @@ class DeCartStarExperimentWrapper:
         }
     
     def reset_metrics(self):
-        """重置实验指标"""
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -381,10 +342,9 @@ class DeCartStarExperimentWrapper:
         }
     
     def get_metrics(self) -> Dict:
-        """获取所有实验指标"""
         metrics = self.metrics.copy()
         
-        # 计算平均值
+        # Compute averages
         if metrics['encrypt_times']:
             metrics['avg_encrypt_time'] = np.mean(metrics['encrypt_times'])
             metrics['std_encrypt_time'] = np.std(metrics['encrypt_times'])
@@ -404,7 +364,6 @@ class DeCartStarExperimentWrapper:
         return metrics
     
     def save_results(self, filepath: str):
-        """保存实验结果"""
         results = {
             'params': {
                 'N': self.params.N,
@@ -418,4 +377,4 @@ class DeCartStarExperimentWrapper:
         with open(filepath, 'wb') as f:
             pickle.dump(results, f)
         
-        print(f" 实验结果已保存到: {filepath}")
+        print(f" Experiment results saved to: {filepath}")

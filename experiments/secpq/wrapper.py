@@ -1,16 +1,4 @@
 # decart/experiments/secpq/wrapper.py
-"""
-SecPQ 方案实验包装器
-当前仓库中的实现采用独立方法入口，复用服务器侧密文预测的统一实验接口：
-- 数据和模型以加密形式提交到云端
-- 云端执行密文预测流程
-- 结果返回后由持钥方恢复
-
-说明：
-- 这里保持与现有实验框架兼容，便于与 DeCart / DeCart* / CCS23 / Server / Offline 统一对比
-- 不修改现有方法逻辑，仅新增独立的 SecPQ 方法标签与结果目录
-"""
-
 import hashlib
 import os
 import time
@@ -19,8 +7,6 @@ from experiments.scheme2_server.wrapper import ServerSchemeExperimentWrapper
 
 
 class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
-    """SecPQ 独立实验包装器。"""
-
     def __init__(self, N: int = 64, n: int = 16):
         super().__init__(N=N, n=n)
         self.system_master_key = None
@@ -47,7 +33,7 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
 
         elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
-        print(f"   SecPQ 初始化完成: {elapsed:.4f}秒")
+        print(f"   SecPQ setup completed: {elapsed:.4f}s")
         return elapsed
 
     def register_user(self, user_id: int):
@@ -129,7 +115,7 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
 
     def execute_query(self, querier_id, owner_id, dataset_id, model, prepared_model=None):
         if not (isinstance(model, dict) and model.get('type') == 'decision_tree'):
-            raise ValueError('SecPQ 当前仅支持 decision_tree 查询')
+            raise ValueError('SecPQ currently supports only decision_tree queries')
 
         check_start = time.perf_counter()
         ticket_map = self.dataset_access_tickets.get((owner_id, dataset_id), {})
@@ -148,7 +134,7 @@ class SecPQExperimentWrapper(ServerSchemeExperimentWrapper):
         })
 
         if access_ticket is None:
-            print("     SecPQ 授权检查失败")
+            print("     SecPQ authorization check failed")
             return None
 
         token_start = time.perf_counter()

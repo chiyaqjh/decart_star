@@ -1,5 +1,4 @@
 # decart/experiments/our_decart_star/runner.py
-"""DeCart* experiment runner."""
 
 import sys
 import os
@@ -11,13 +10,11 @@ from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-# 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))  #  decart 
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-#  wrapper
 from config import Config
 from experiments.datasets import get_dataset_spec, load_experiment_records
 from experiments.models.model_loader import load_trained_experiment_model
@@ -28,28 +25,26 @@ from experiments.our_decart_star.wrapper import DeCartStarExperimentWrapper
 
 @dataclass
 class ExperimentConfig:
-    """Configuration for a DeCart* experiment run."""
-    # 
-    N: int = Config.MAX_USERS  # 
-    n: int = Config.BLOCK_SIZE  # ?
+
+    N: int = Config.MAX_USERS 
+    n: int = Config.BLOCK_SIZE 
     
-    # 
-    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # ?
-    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 
+
+    num_records: int = Config.EXPERIMENT_NUM_RECORDS  
+    record_dim: int = Config.EXPERIMENT_RECORD_DIM      
     dataset: str = 'synthetic'
     mnist_data_dir: str = 'data'
     model_source: str = 'synthetic'
     trained_models_dir: str = 'experiments/models/trained'
     
-    # 
-    model_types: List[str] = None  # 
+
+    model_types: List[str] = None 
     
-    # 
-    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # ?
+
+    policy_size: int = Config.EXPERIMENT_POLICY_SIZE 
     num_queriers: int = 1
     
-    # 
-    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 
+    num_runs: int = Config.EXPERIMENT_NUM_RUNS    
     save_results: bool = True
     results_dir: Optional[str] = None
     
@@ -69,17 +64,15 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    """DeCart* ()"""
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self.results = {
             'config': asdict(config),
-            'models': {},  # ?
+            'models': {},
             'summary': {}
         }
         
-        # ?
         for model_type in config.model_types:
             self.results['models'][model_type] = {
                 'setup_times': [],
@@ -111,12 +104,11 @@ class ExperimentRunner:
                 'runs': []
             }
         
-        # 
         if config.save_results:
             os.makedirs(config.results_dir, exist_ok=True)
     
     def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
-        """Generate records from the configured data source."""
+    
         if self.config.dataset != 'synthetic':
             print(f"\nLoading {self.config.dataset} test samples from {self.config.mnist_data_dir}...")
             data, labels = load_experiment_records(
@@ -131,23 +123,23 @@ class ExperimentRunner:
         return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
     
     def generate_model(self, model_type: str, run_id: int = 0) -> Any:
-        """Generate a synthetic model for the requested model type."""
+    
         if self.config.model_source == 'trained':
             print(f"   Loading trained {model_type} model...")
             return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
         
         if model_type == 'dot':
-            #  - ?
+
             print(f"   ...")
             return generate_synthetic_dot_model(self.config.record_dim, run_id)
         
         elif model_type == 'decision_tree':
-            # ?- 
+       
             print(f"   Generating decision tree model...")
             return generate_synthetic_decision_tree()
         
         elif model_type == 'neural_network':
-            #  - 
+    
             print(f"   ...")
             
             print("   NN random init scale: deterministic shared synthetic model")
@@ -157,7 +149,6 @@ class ExperimentRunner:
             raise ValueError(f"Unsupported model type: {model_type}")
     
     def register_all_users(self, wrapper: DeCartStarExperimentWrapper, policy: List[int]):
-        """Register every user in the supplied policy."""
         print(f"\nRegistering policy users...")
         for uid in policy:
             try:
@@ -172,53 +163,45 @@ class ExperimentRunner:
         print(f"{'='*60}")
         
         try:
-            # ?
+
             wrapper = DeCartStarExperimentWrapper(N=self.config.N, n=self.config.n)
             setup_time = wrapper.setup()
             setup_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             wrapper.reset_metrics()
             
-            # ID
+        
             owner_id = 5
             active_querier_id = owner_id + 1
             if active_querier_id >= self.config.N:
                 raise ValueError(f" N={self.config.N} ")
             query_repetitions = self.config.num_queriers
             
-            # 
             policy = list(range(min(self.config.policy_size, self.config.N - 2)))
             policy.append(owner_id)
             policy.append(active_querier_id)
-            policy = list(set(policy))  # 
+            policy = list(set(policy)) 
             
-            # ?
             self.register_all_users(wrapper, policy)
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
-            
-            # 
+
             wrapper.curator.add_trust(active_querier_id, owner_id)
-            
-            # 
+
             data, _ = self.generate_test_data(run_id)
-            
-            # 
+ 
             model = self.generate_model(model_type, run_id)
             
-            # ?
             print(f"\nEncrypting dataset...")
             C_m, sk_h_s, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
-            
-            # ?
+  
             wrapper.store_dataset(owner_id, ds_id, C_m, sk_h_s)
 
             prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') and model_type in {'dot', 'decision_tree', 'neural_network'} else None
-            
-            # 
+   
             total_results = 0
             check_request_size_total = 0
             check_response_size_total = 0
             if model_type == 'dot':
-                # 
+    
                 print(f"\nExecuting dot-product queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
                 for repetition_idx in range(query_repetitions):
@@ -236,7 +219,7 @@ class ExperimentRunner:
                 decrypt_time = float(np.sum(wrapper.metrics['decrypt_times'])) if wrapper.metrics['decrypt_times'] else 0
                 
             elif model_type == 'neural_network':
-                # 
+      
                 print(f"\nExecuting neural-network queries ({query_repetitions} repetitions, querier={active_querier_id})...")
                 results = None
                 for repetition_idx in range(query_repetitions):
@@ -273,8 +256,7 @@ class ExperimentRunner:
             else:
                 print(f"      : {model_type}")
                 return None
-            
-            # 
+
             phase_comm = {'upload': 0, 'check': 0, 'query': 0, 'decrypt': 0}
             for c in wrapper.metrics['communication_sizes']:
                 if isinstance(c, dict):
@@ -340,7 +322,6 @@ class ExperimentRunner:
             return None
     
     def run(self) -> Dict:
-        """Execute all configured experiment runs and summarize the results."""
         print("\n" + "=" * 80)
         print("Starting DeCart* experiments")
         print("=" * 80)
@@ -348,7 +329,6 @@ class ExperimentRunner:
         for key, value in asdict(self.config).items():
             print(f"   {key}: {value}")
         
-        # ?
         for model_type in self.config.model_types:
             print(f"\n{'#' * 70}")
             print(f"Model type: {model_type}")
@@ -360,7 +340,7 @@ class ExperimentRunner:
                 run_result = self.run_single_experiment(i, model_type)
                 
                 if run_result:
-                    # 
+
                     model_results['setup_times'].append(run_result.get('setup_time', 0))
                     model_results['keygen_times'].append(run_result.get('keygen_time', 0))
                     model_results['register_times'].append(run_result.get('register_time', 0))
@@ -418,23 +398,19 @@ class ExperimentRunner:
                 else:
                     print(f"\n       {i+1} ")
         
-        # 
         self._compute_statistics()
         
-        # 
         if self.config.save_results:
             self.save_results()
         
         return self.results
     
     def _compute_statistics(self):
-        """Compute summary statistics from the collected run metrics."""
         summary = {}
         
         for model_type, model_data in self.results['models'].items():
             stats = {}
 
-            # ?
             if model_data['setup_times']:
                 times = model_data['setup_times']
                 stats['avg_setup_time'] = float(np.mean(times))
@@ -463,7 +439,6 @@ class ExperimentRunner:
                 stats['min_check_time'] = float(np.min(times))
                 stats['max_check_time'] = float(np.max(times))
             
-            # 
             if model_data['encrypt_times']:
                 times = model_data['encrypt_times']
                 stats['avg_encrypt_time'] = float(np.mean(times))
@@ -471,7 +446,6 @@ class ExperimentRunner:
                 stats['min_encrypt_time'] = float(np.min(times))
                 stats['max_encrypt_time'] = float(np.max(times))
             
-            # 
             if model_data['query_times']:
                 times = model_data['query_times']
                 stats['avg_query_time'] = float(np.mean(times))
@@ -479,7 +453,6 @@ class ExperimentRunner:
                 stats['min_query_time'] = float(np.min(times))
                 stats['max_query_time'] = float(np.max(times))
             
-            # 
             if model_data['decrypt_times']:
                 times = model_data['decrypt_times']
                 stats['avg_decrypt_time'] = float(np.mean(times))
@@ -487,7 +460,6 @@ class ExperimentRunner:
                 stats['min_decrypt_time'] = float(np.min(times))
                 stats['max_decrypt_time'] = float(np.max(times))
             
-            # 
             if model_data['communication_sizes']:
                 sizes = model_data['communication_sizes']
                 stats['avg_communication_size'] = float(np.mean(sizes)) / 1024  # KB
@@ -519,9 +491,7 @@ class ExperimentRunner:
         
         self.results['summary'] = summary
         
-        print("\n" + "=" * 80)
         print("DeCart* Result Summary")
-        print("=" * 80)
         for model_type, stats in summary.items():
             print(f"\nModel: {model_type}")
             for key, value in stats.items():
@@ -624,7 +594,3 @@ if __name__ == "__main__":
 
     runner = ExperimentRunner(config)
     runner.run()
-    
-    print("\n" + "=" * 80)
-    print("DeCart* Experiment Completed")
-    print("=" * 80)

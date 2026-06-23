@@ -1,11 +1,4 @@
 # decart/experiments/scheme2_server/wrapper.py
-"""
-同态加密+服务器方案实验包装器
-模拟传统云服务模式：
-- 数据和模型都用服务器的公钥加密
-- 依赖单一可信服务器
-"""
-
 import sys
 import os
 import time
@@ -13,51 +6,37 @@ import pickle
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 
-# 添加项目根目录到路径
+# Add the project root directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 复用核心密码学模块
+# Reuse the core cryptographic module
 from core.homomorphic import HomomorphicEncryption
 
 
 class ServerSchemeExperimentWrapper:
-    """
-    同态加密+服务器方案实验包装器
-    特点：
-    - 单一可信服务器
-    - 数据和模型用服务器公钥加密
-    - 服务器执行同态计算
-    - 用户无密钥（完全依赖服务器）
-    """
-    
+
     def __init__(self, N: int = 64, n: int = 16):
-        """
-        初始化实验环境
-        
-        参数:
-            N: 最大用户数（仅用于接口兼容）
-            n: 每块用户数（仅用于接口兼容）
-        """
+
         self.N = N
         self.n = n
         
-        # 初始化同态加密（服务器拥有密钥）
+        # Initialize homomorphic encryption (server owns keys)
         self.he = HomomorphicEncryption(poly_modulus_degree=32768)
         
-        # 服务器密钥对
+        # Server key pair
         self.server_public_key = self.he.public_key
         self.server_secret_key = self.he.secret_key
         
-        # 数据存储（加密）
+        # Encrypted data storage
         self.encrypted_datasets = {}  # owner_id -> {dataset_id -> encrypted_data}
         
-        # 用户注册表
+        # User registry
         self.registered_users = set()
         
-        # 实验数据
+        # Experiment metrics
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -71,7 +50,6 @@ class ServerSchemeExperimentWrapper:
         }
 
     def _safe_obj_size(self, obj: Any, fallback: int = 1024) -> int:
-        """稳健估算对象字节数，优先使用真实序列化大小。"""
         seen_ids = set()
 
         def _measure(x: Any, depth: int = 0) -> int:
@@ -123,7 +101,6 @@ class ServerSchemeExperimentWrapper:
         return size if size > 0 else fallback
 
     def get_auxiliary_sizes(self) -> Dict[str, int]:
-        """Server 基线不维护 CRS / pp / aux，统一返回 0。"""
         return {
             'crs_size_bytes': 0,
             'pp_size_bytes': 0,
@@ -142,29 +119,19 @@ class ServerSchemeExperimentWrapper:
     def _report_progress(cls, stage: str, current: int, total: int, progress_label: Optional[str] = None):
         if cls._should_report_progress(current, total):
             prefix = f"{progress_label} " if progress_label else ""
-            print(f"      {prefix}{stage} 进度: {current}/{total}")
+            print(f"      {prefix}{stage} progress: {current}/{total}")
     
     def setup(self) -> float:
-        """
-        初始化系统
-        
-        返回:
-            setup_time: 初始化耗时
-        """
+
         start = time.perf_counter()
-        # 服务器方案只需要初始化同态加密（已在 __init__ 中完成）
+        # Server scheme only needs homomorphic-encryption initialization (already done in __init__)
         elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
-        print(f"   Server 方案初始化完成: {elapsed:.4f}秒")
+        print(f"   Server scheme initialization completed: {elapsed:.4f}s")
         return elapsed
     
     def register_user(self, user_id: int) -> Tuple[int, Any]:
-        """
-        注册用户（服务器方案中用户无密钥）
-        
-        返回:
-            (user_id, None) - 用户没有密钥
-        """
+
         self.metrics['keygen_times'].append(0.0)
 
         register_start = time.perf_counter()
@@ -173,7 +140,7 @@ class ServerSchemeExperimentWrapper:
         register_elapsed = time.perf_counter() - register_start
         self.metrics['register_times'].append(register_elapsed)
         
-        # 用户没有密钥，所有加密用服务器公钥
+        # Users have no keys; all encryption uses the server public key
         return user_id, None
     
     def encrypt_dataset(self, 
@@ -181,32 +148,27 @@ class ServerSchemeExperimentWrapper:
                        data: List[List[float]],
                        policy: List[int],
                        metadata: Optional[Dict] = None) -> Tuple[Dict, Any, str]:
-        """
-        加密数据集（使用服务器公钥）
-        
-        返回:
-            (C_m, None, dataset_id) - 服务器方案不需要密钥份额
-        """
-        # 生成数据集ID
+
+        # Generate dataset ID
         import time
         timestamp = int(time.time() * 1000)
         dataset_id = f"ds_{owner_id}_{timestamp}"
         
-        # 测量加密时间
+        # Measure encryption time
         start = time.perf_counter()
         
-        # 加密每条数据记录
+        # Encrypt each data record
         encrypted_data = []
         total_records = len(data)
         for index, record in enumerate(data, start=1):
             encrypted_record = self.he.encrypt(record)
             encrypted_data.append(encrypted_record)
-            self._report_progress('数据集加密', index, total_records)
+            self._report_progress('Dataset encryption', index, total_records)
         
         elapsed = time.perf_counter() - start
         self.metrics['encrypt_times'].append(elapsed)
         
-        # 存储加密数据
+        # Store encrypted data
         if owner_id not in self.encrypted_datasets:
             self.encrypted_datasets[owner_id] = {}
         
@@ -217,12 +179,12 @@ class ServerSchemeExperimentWrapper:
             'store_time': time.time()
         }
         
-        # 测量密文大小
+        # Measure ciphertext size
         try:
             import pickle
             size = len(pickle.dumps(encrypted_data))
         except:
-            size = len(data) * 1024 * 1024  # 1MB per record估算
+            size = len(data) * 1024 * 1024  # Estimated 1MB per record
         
         self.metrics['communication_sizes'].append({
             'type': 'encrypt',
@@ -230,9 +192,9 @@ class ServerSchemeExperimentWrapper:
             'records': len(data)
         })
         
-        print(f"     Server 方案加密: {elapsed*1000:.2f} ms, 密文大小: {size/1024:.2f} KB")
+        print(f"     Server-scheme encryption: {elapsed*1000:.2f} ms, ciphertext size: {size/1024:.2f} KB")
         
-        # 返回格式兼容的元数据
+        # Return metadata in a compatible format
         C_m = {
             'type': 'server_scheme',
             'dataset_id': dataset_id,
@@ -244,18 +206,13 @@ class ServerSchemeExperimentWrapper:
         return C_m, None, dataset_id
     
     def store_dataset(self, owner_id: int, dataset_id: str, C_m: Dict, sk_h_s: Any):
-        """已在 encrypt_dataset 中完成存储"""
+
         pass
     
     def encrypt_model(self, model: Any) -> Any:
-        """
-        加密模型（使用服务器公钥）
-        
-        返回:
-            加密后的模型
-        """
+
         if isinstance(model, list):
-            # 点积模型 - 加密列表
+            # Dot-product model - encrypt list
             return self.he.encrypt(model)
         elif isinstance(model, dict) and model.get('type') == 'neural_network':
             encrypted_layers = []
@@ -294,14 +251,14 @@ class ServerSchemeExperimentWrapper:
                         weight_row.extend([0.0] * (input_dim - len(weight_row)))
                     encrypted_weight_rows.append(self.he.encrypt(weight_row))
                     processed_units += 1
-                    self._report_progress('模型加密', processed_units, total_units)
+                    self._report_progress('Model encryption', processed_units, total_units)
 
                 encrypted_bias_vector = None
                 bias_values = [float(value) for value in bias]
                 if bias_values:
                     encrypted_bias_vector = self.he.encrypt(bias_values)
                     processed_units += 1
-                    self._report_progress('模型加密', processed_units, total_units)
+                    self._report_progress('Model encryption', processed_units, total_units)
 
                 encrypted_layers.append({
                     'layer_idx': layer.get('layer_idx', len(encrypted_layers)),
@@ -322,17 +279,17 @@ class ServerSchemeExperimentWrapper:
                 'output_dim': model.get('output_dim')
             }
         else:
-            # 默认处理
+            # Default handling
             return self.he.encrypt([0.0])
 
     def prepare_query_model(self, querier_id: int, model: Any) -> Any:
-        """Encrypt the model once and reuse it across repeated queries."""
+
         start_encrypt_model = time.perf_counter()
-        print("   准备查询模型...")
+        print("   Preparing query model...")
         encrypted_model = self.encrypt_model(model)
         elapsed = time.perf_counter() - start_encrypt_model
         self.metrics['encrypt_times'].append(elapsed)
-        print(f"   查询模型准备完成: {elapsed*1000:.2f} ms")
+        print(f"   Query model preparation completed: {elapsed*1000:.2f} ms")
         return encrypted_model
 
     @staticmethod
@@ -377,15 +334,10 @@ class ServerSchemeExperimentWrapper:
                      model: Any,
                      prepared_model: Any = None,
                      progress_label: Optional[str] = None) -> Optional[List[float]]:
-        """
-        执行查询（服务器端同态计算）
-        
-        返回:
-            解密后的查询结果
-        """
-        # 检查数据集是否存在
+
+        # Check whether the dataset exists
         if owner_id not in self.encrypted_datasets or dataset_id not in self.encrypted_datasets[owner_id]:
-            print(f"     数据集不存在")
+            print(f"     Dataset does not exist")
             return None
 
         check_start = time.perf_counter()
@@ -404,7 +356,7 @@ class ServerSchemeExperimentWrapper:
         
         encrypted_model = prepared_model if prepared_model is not None else self.prepare_query_model(querier_id, model)
 
-        # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        # Query-request stage communication: unified accounting for packets sent to server
         req_payload = {
             'querier_id': querier_id,
             'owner_id': owner_id,
@@ -419,24 +371,24 @@ class ServerSchemeExperimentWrapper:
             'records': len(encrypted_data)
         })
         
-        # 执行同态查询
+        # Execute homomorphic query
         start_query = time.perf_counter()
         
         total_records = len(encrypted_data)
         results = []
         if isinstance(model, list):
-            # 点积模型
+            # Dot-product model
             for index, enc_record in enumerate(encrypted_data, start=1):
                 try:
-                    # 同态点积
+                    # Homomorphic dot product
                     result = enc_record.dot(encrypted_model)
                     results.append(result)
                 except:
                     results.append(self.he.encrypt([0.0]))
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         elif isinstance(model, dict) and model.get('type') == 'decision_tree':
-            # 简单决策树：统一基线逻辑
-            # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
+            # Simple decision tree using unified baseline logic
+            # Rule: feature[0] <= 0.5 -> left leaf, otherwise right leaf
             nodes = model.get('nodes', [])
             node_map = {n.get('id'): n for n in nodes}
             root_id = model.get('root', 0)
@@ -472,7 +424,7 @@ class ServerSchemeExperimentWrapper:
                     results.append(self.he.encrypt([pred]))
                 except:
                     results.append(self.he.encrypt([0.0]))
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         elif isinstance(model, dict) and model.get('type') == 'neural_network':
             for index, enc_record in enumerate(encrypted_data, start=1):
                 try:
@@ -483,17 +435,17 @@ class ServerSchemeExperimentWrapper:
                     results.append(self.he.encrypt([pred]))
                 except:
                     results.append(self.he.encrypt([0.0]))
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         else:
-            # 简化处理
+            # Simplified fallback
             for index, enc_record in enumerate(encrypted_data, start=1):
                 results.append(self.he.encrypt([0.0]))
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
 
-        # 返回包阶段通信量：服务器返回的加密结果列表
+        # Response-packet stage communication: encrypted result list returned by server
         res_size = self._safe_obj_size(results, fallback=max(1, len(results)) * 1024)
         self.metrics['communication_sizes'].append({
             'type': 'decrypt',
@@ -501,7 +453,7 @@ class ServerSchemeExperimentWrapper:
             'records': len(results)
         })
         
-        # 解密结果（服务器拥有私钥）
+        # Decrypt results (server holds private key)
         start_decrypt = time.perf_counter()
         decrypted_results = []
         total_results = len(results)
@@ -514,22 +466,22 @@ class ServerSchemeExperimentWrapper:
                     decrypted_results.append(float(dec))
             except:
                 decrypted_results.append(0.0)
-            self._report_progress('结果解密', index, total_results, progress_label)
+            self._report_progress('Result decryption', index, total_results, progress_label)
         
         decrypt_time = time.perf_counter() - start_decrypt
         self.metrics['decrypt_times'].append(decrypt_time)
         
-        print(f"      Server 方案查询: {query_time*1000:.2f} ms")
+        print(f"      Server-scheme query: {query_time*1000:.2f} ms")
         if prepared_model is None:
-            print(f"      模型加密: {self.metrics['encrypt_times'][-1]*1000:.2f} ms")
+            print(f"      Model encryption: {self.metrics['encrypt_times'][-1]*1000:.2f} ms")
         else:
-            print(f"      模型加密: 0.00 ms (复用已准备模型)")
-        print(f"      结果解密: {decrypt_time*1000:.2f} ms")
+            print(f"      Model encryption: 0.00 ms (reusing prepared model)")
+        print(f"      Result decryption: {decrypt_time*1000:.2f} ms")
         
         return decrypted_results
     
     def reset_metrics(self):
-        """重置实验指标"""
+
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -543,10 +495,10 @@ class ServerSchemeExperimentWrapper:
         }
     
     def get_metrics(self) -> Dict:
-        """获取所有实验指标"""
+
         metrics = self.metrics.copy()
         
-        # 计算平均值
+        # Compute averages
         if metrics['encrypt_times']:
             metrics['avg_encrypt_time'] = np.mean(metrics['encrypt_times'])
             metrics['std_encrypt_time'] = np.std(metrics['encrypt_times'])
@@ -563,7 +515,7 @@ class ServerSchemeExperimentWrapper:
             metrics['avg_decrypt_time'] = np.mean(metrics['decrypt_times'])
             metrics['std_decrypt_time'] = np.std(metrics['decrypt_times'])
         
-        # 通信大小
+        # Communication size
         if metrics['communication_sizes']:
             sizes = [s['size'] for s in metrics['communication_sizes']]
             metrics['avg_communication_size'] = np.mean(sizes)

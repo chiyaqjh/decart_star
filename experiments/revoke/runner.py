@@ -1,4 +1,3 @@
-"""Standalone revoke experiment runner for DeCart and DeCart*."""
 
 import json
 import os
@@ -24,7 +23,6 @@ from experiments.our_decart_star.wrapper import DeCartStarExperimentWrapper
 
 @dataclass
 class RevokeExperimentConfig:
-    """Configuration for a standalone revoke experiment."""
 
     scheme: str = "decart"
     N: int = Config.MAX_USERS
@@ -71,8 +69,6 @@ class RevokeExperimentConfig:
 
 
 class RevokeExperimentRunner:
-    """Runs a revoke-focused experiment with end-to-end validation."""
-
     WRAPPER_BY_SCHEME = {
         "decart": DeCartExperimentWrapper,
         "decart_star": DeCartStarExperimentWrapper,
@@ -91,7 +87,6 @@ class RevokeExperimentRunner:
             os.makedirs(config.results_dir, exist_ok=True)
 
     def generate_test_data(self) -> List[List[float]]:
-        """Generate normalized synthetic records."""
         if self.config.dataset != 'synthetic':
             print(f"\nLoading {self.config.dataset} samples from {self.config.mnist_data_dir}...")
             data, _ = load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
@@ -105,7 +100,6 @@ class RevokeExperimentRunner:
         return data
 
     def generate_model(self) -> Any:
-        """Generate a model matching the shared experiment conventions."""
         if self.config.model_source == 'trained':
             print(f"   Loading trained {self.config.model_type} model...")
             return load_trained_experiment_model(self.config.model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
@@ -187,7 +181,6 @@ class RevokeExperimentRunner:
         }
 
     def build_user_layout(self) -> Dict[str, Any]:
-        """Select owner, revoked user, survivor, and a policy."""
         if self.config.N >= 8:
             owner_id = 5
             survivor_id = 6
@@ -229,7 +222,6 @@ class RevokeExperimentRunner:
         }
 
     def register_policy_users(self, wrapper: Any, policy: List[int]) -> Dict[str, float]:
-        """Register all policy users and aggregate keygen/register costs."""
         for user_id in policy:
             wrapper.register_user(user_id)
 
@@ -317,7 +309,6 @@ class RevokeExperimentRunner:
         C_M: Dict[str, Any],
         prep_metrics: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Execute a server query from a prepared request package."""
         result = {
             **prep_metrics,
             "server_query_time": 0.0,
@@ -353,7 +344,6 @@ class RevokeExperimentRunner:
         dataset_id: str,
         model: Any,
     ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Prepare and execute a complete query pipeline."""
         prepared_C_M, prep_metrics = self.prepare_query_package(
             wrapper,
             querier_id,
@@ -385,7 +375,6 @@ class RevokeExperimentRunner:
         return result, prepared_C_M
 
     def run_single_experiment(self, run_id: int) -> Dict[str, Any]:
-        """Run one end-to-end revoke experiment."""
         print("\n" + "=" * 80)
         print(f"Revoke run {run_id + 1}/{self.config.num_runs} - {self.config.scheme} - {self.config.model_type}")
         print("=" * 80)
@@ -552,7 +541,6 @@ class RevokeExperimentRunner:
         }
 
     def compute_summary(self):
-        """Aggregate revoke experiment results."""
         runs = self.results["runs"]
         if not runs:
             self.results["summary"] = {}
@@ -587,7 +575,6 @@ class RevokeExperimentRunner:
         self.results["summary"] = summary
 
     def save_results(self):
-        """Save revoke experiment results as JSON."""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{self.config.scheme}_revoke_{self.config.model_type}_{timestamp}.json"
         output_path = os.path.join(self.config.results_dir, filename)
@@ -611,10 +598,6 @@ class RevokeExperimentRunner:
         print(f"Saved revoke results: {output_path}")
 
     def run(self) -> Dict[str, Any]:
-        """Run the configured revoke experiments."""
-        print("\n" + "=" * 80)
-        print(f"Starting revoke experiment for {self.config.scheme} ({self.config.model_type})")
-        print("=" * 80)
 
         for key, value in asdict(self.config).items():
             print(f"{key}: {value}")

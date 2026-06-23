@@ -1,9 +1,4 @@
 # decart/experiments/secpq/runner.py
-"""
-SecPQ 方案实验运行器
-作为独立对比方法接入现有实验框架。
-"""
-
 import sys
 import os
 import time
@@ -12,7 +7,7 @@ import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 
-# 添加项目根目录到路径
+# Add project root to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
@@ -31,7 +26,6 @@ SUPPORTED_MODEL_TYPES = ('decision_tree',)
 
 @dataclass
 class ExperimentConfig:
-    """实验配置"""
     N: int = Config.MAX_USERS
     n: int = Config.BLOCK_SIZE
     num_records: int = Config.EXPERIMENT_NUM_RECORDS
@@ -53,9 +47,9 @@ class ExperimentConfig:
 
         unsupported = sorted(set(self.model_types) - set(SUPPORTED_MODEL_TYPES))
         if unsupported:
-            raise ValueError(f"SecPQ 仅支持决策树模型，收到不支持的模型类型: {unsupported}")
+            raise ValueError(f"SecPQ supports only decision tree models, got unsupported model types: {unsupported}")
         if self.num_queriers < 1:
-            raise ValueError('num_queriers 必须至少为 1')
+            raise ValueError('num_queriers must be at least 1')
         if self.dataset not in {'synthetic', 'mnist', 'uci_har'}:
             raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
         dataset_spec = get_dataset_spec(self.dataset)
@@ -67,8 +61,6 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    """SecPQ 方案实验运行器"""
-
     def __init__(self, config: ExperimentConfig):
         self.config = config
         self.results = {
@@ -120,32 +112,30 @@ class ExperimentRunner:
 
     def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
         if self.config.dataset != 'synthetic':
-            print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
+            print(f"\nLoading {self.config.dataset} samples: {self.config.mnist_data_dir}")
             return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
 
         return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
 
     def generate_model(self, model_type: str, run_id: int = 0) -> Any:
         if self.config.model_source == 'trained':
-            print(f"   加载训练好的 {model_type} 模型...")
+            print(f"   Loading trained {model_type} model...")
             return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
 
         if model_type == 'decision_tree':
             return generate_synthetic_decision_tree()
 
-        raise ValueError(f"SecPQ 仅支持 decision_tree，收到模型类型: {model_type}")
+        raise ValueError(f"SecPQ supports only decision_tree, got model type: {model_type}")
 
     def register_all_users(self, wrapper: SecPQExperimentWrapper, policy: List[int]):
-        print("\n 注册用户...")
+        print("\n Registering users...")
         total = len(policy)
         for index, uid in enumerate(policy, start=1):
             wrapper.register_user(uid)
-            self._print_progress("   注册进度", index, total)
+            self._print_progress("   Registration progress", index, total)
 
     def run_single_experiment(self, run_id: int, model_type: str) -> Optional[Dict]:
-        print(f"\n{'='*60}")
-        print(f" [SecPQ方案] 运行实验 {run_id+1}/{self.config.num_runs} - 模型: {model_type}")
-        print(f"{'='*60}")
+        print(f" [SecPQ] Running experiment {run_id+1}/{self.config.num_runs} - model: {model_type}")
 
         try:
             wrapper = SecPQExperimentWrapper(N=self.config.N, n=self.config.n)
@@ -156,7 +146,7 @@ class ExperimentRunner:
             owner_id = 5
             active_querier_id = owner_id + 1
             if active_querier_id >= self.config.N:
-                raise ValueError(f"当前 N={self.config.N} 无法分配查询用户")
+                raise ValueError(f"Current N={self.config.N} cannot allocate a querying user")
             query_repetitions = self.config.num_queriers
 
             policy = list(range(min(self.config.policy_size, self.config.N - 2)))
@@ -170,12 +160,12 @@ class ExperimentRunner:
             data, _ = self.generate_test_data(run_id)
             model = self.generate_model(model_type, run_id)
 
-            print("\n 加密数据集...")
+            print("\n Encrypting dataset...")
             _, _, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
 
             prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') else None
 
-            print(f"\n 执行查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+            print(f"\n Executing query ({query_repetitions} repeated queries, querier={active_querier_id})...")
             results = None
             total_results = 0
             for index in range(1, query_repetitions + 1):
@@ -183,7 +173,7 @@ class ExperimentRunner:
                 if current_results is not None:
                     results = current_results
                     total_results += len(current_results)
-                self._print_progress("   查询进度", index, query_repetitions)
+                self._print_progress("   Query progress", index, query_repetitions)
 
             keygen_times = wrapper.metrics['keygen_times']
             register_times = wrapper.metrics['register_times']
@@ -237,27 +227,26 @@ class ExperimentRunner:
             }
 
             if results:
-                print(f"\n 查询成功! 结果数量: {len(results)}")
-                print(f"   结果示例: {results[:3]}")
+                print(f"\n Query succeeded! Number of results: {len(results)}")
+                print(f"   Result sample: {results[:3]}")
 
             return model_metrics
         except Exception as e:
-            print(f"\n   实验运行失败: {e}")
+            print(f"\n   Experiment run failed: {e}")
             import traceback
             traceback.print_exc()
             return None
 
     def run(self) -> Dict:
-        print("\n" + "="*80)
-        print(" 开始 SecPQ 方案实验")
-        print("="*80)
-        print("\n 实验配置:")
+
+        print(" Starting SecPQ experiments")
+        print("\n Experiment configuration:")
         for key, value in asdict(self.config).items():
             print(f"   {key}: {value}")
 
         for model_type in self.config.model_types:
             print(f"\n{'#'*70}")
-            print(f" 测试模型类型: {model_type}")
+            print(f" Testing model type: {model_type}")
             print(f"{'#'*70}")
 
             model_results = self.results['models'][model_type]
@@ -312,11 +301,11 @@ class ExperimentRunner:
                         'success': run_result['success'],
                         'num_results': run_result['num_results']
                     })
-                    self._print_progress(f"   {model_type} 运行进度", i + 1, self.config.num_runs)
-                    print(f"\n     运行 {i+1} 完成: 查询时间 {run_result['query_time']*1000:.2f} ms")
+                    self._print_progress(f"   {model_type} run progress", i + 1, self.config.num_runs)
+                    print(f"\n     Run {i+1} completed: query time {run_result['query_time']*1000:.2f} ms")
                 else:
-                    self._print_progress(f"   {model_type} 运行进度", i + 1, self.config.num_runs)
-                    print(f"\n     运行 {i+1} 失败")
+                    self._print_progress(f"   {model_type} run progress", i + 1, self.config.num_runs)
+                    print(f"\n     Run {i+1} failed")
 
         self._compute_statistics()
         if self.config.save_results:
@@ -406,11 +395,11 @@ class ExperimentRunner:
 
         self.results['summary'] = summary
 
-        print("\n" + "="*80)
-        print(" SecPQ 方案实验结果")
-        print("="*80)
+
+        print(" SecPQ experiment results")
+
         for model_type, stats in summary.items():
-            print(f"\n  模型类型: {model_type}")
+            print(f"\n  Model type: {model_type}")
             for key, value in stats.items():
                 if 'time' in key:
                     print(f"   {key}: {value*1000:.2f} ms")
@@ -440,35 +429,34 @@ class ExperimentRunner:
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(convert_to_json(self.results), f, indent=2)
 
-        print("\n SecPQ 方案实验结果已保存:")
+        print("\n SecPQ experiment results saved:")
         print(f"   JSON: {json_path}")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="SecPQ 方案实验")
-    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="最大用户数")
-    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="每块用户数")
-    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
-    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
-    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="数据集来源")
-    parser.add_argument("--mnist-data-dir", type=str, default="data", help="MNIST 缓存目录")
-    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="模型来源")
-    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="训练模型目录")
-    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
-    parser.add_argument("--num-queriers", type=int, default=1, help="真实查询者数量")
-    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
-    parser.add_argument("--model-types", nargs="+", default=list(SUPPORTED_MODEL_TYPES), help="模型类型列表，仅支持 decision_tree")
-    parser.add_argument("--results-dir", type=str, default=None, help="结果保存目录")
-    parser.add_argument("--no-save", action="store_true", help="不保存结果")
+    parser = argparse.ArgumentParser(description="SecPQ experiments")
+    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="Maximum number of users")
+    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="Users per block")
+    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="Number of data records")
+    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="Record dimension")
+    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="Dataset source")
+    parser.add_argument("--mnist-data-dir", type=str, default="data", help="MNIST cache directory")
+    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="Model source")
+    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="Trained model directory")
+    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="Policy size")
+    parser.add_argument("--num-queriers", type=int, default=1, help="Number of active queriers")
+    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="Number of repeated runs")
+    parser.add_argument("--model-types", nargs="+", default=list(SUPPORTED_MODEL_TYPES), help="Model type list, only decision_tree is supported")
+    parser.add_argument("--results-dir", type=str, default=None, help="Result output directory")
+    parser.add_argument("--no-save", action="store_true", help="Do not save results")
 
     args = parser.parse_args()
 
-    print("\n" + "="*80)
-    print("  启动 SecPQ 方案实验")
-    print("="*80)
-    print("\n 命令行参数:")
+    print("  Launching SecPQ experiments")
+
+    print("\n Command-line arguments:")
     print(f"   N: {args.N}")
     print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
@@ -503,7 +491,3 @@ if __name__ == "__main__":
 
     runner = ExperimentRunner(config)
     runner.run()
-
-    print("\n" + "="*80)
-    print("  SecPQ 方案实验完成")
-    print("="*80)

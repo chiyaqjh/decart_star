@@ -1,9 +1,4 @@
 # decart/experiments/scheme1_ccs23/wrapper.py
-"""
-CCS23 直接应用方案实验包装器
-作为性能上限基准（中心化服务器）
-"""
-
 import sys
 import os
 import time
@@ -11,48 +6,33 @@ import pickle
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 
-# 添加项目根目录到路径
+# Add the project root directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 复用核心密码学模块
+# Reuse the core cryptographic module
 from core.homomorphic import HomomorphicEncryption
 
 
 class CCS23ExperimentWrapper:
-    """
-    CCS23 方案实验包装器
-    特点：
-    - 中心化服务器
-    - 服务器持有所有数据明文
-    - 查询者发送模型明文
-    - 服务器明文执行推理
-    - 作为性能上限基准
-    """
-    
+
     def __init__(self, N: int = 64, n: int = 16):
-        """
-        初始化实验环境
         
-        参数:
-            N: 最大用户数（仅用于接口兼容）
-            n: 每块用户数（仅用于接口兼容）
-        """
         self.N = N
         self.n = n
         
-        # 初始化同态加密（仅用于测量，实际不用）
+        # Initialize homomorphic encryption (for measurement only, not used in baseline logic)
         self.he = HomomorphicEncryption(poly_modulus_degree=32768)
         
-        # 数据存储（明文！）
+        # Data storage (plaintext)
         self.datasets = {}  # owner_id -> {dataset_id -> {'data': data, 'policy': policy}}
         
-        # 用户注册表
+        # User registry
         self.registered_users = set()
         
-        # 实验数据
+        # Experiment metrics
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -66,7 +46,6 @@ class CCS23ExperimentWrapper:
         }
 
     def _safe_obj_size(self, obj: Any, fallback: int = 1024) -> int:
-        """稳健估算对象字节数，优先使用真实序列化大小。"""
         seen_ids = set()
 
         def _measure(x: Any, depth: int = 0) -> int:
@@ -118,7 +97,6 @@ class CCS23ExperimentWrapper:
         return size if size > 0 else fallback
 
     def get_auxiliary_sizes(self) -> Dict[str, int]:
-        """CCS23 不维护 CRS / pp / aux，统一返回 0。"""
         return {
             'crs_size_bytes': 0,
             'pp_size_bytes': 0,
@@ -137,29 +115,19 @@ class CCS23ExperimentWrapper:
     def _report_progress(cls, stage: str, current: int, total: int, progress_label: Optional[str] = None):
         if cls._should_report_progress(current, total):
             prefix = f"{progress_label} " if progress_label else ""
-            print(f"      {prefix}{stage} 进度: {current}/{total}")
+            print(f"      {prefix}{stage} progress: {current}/{total}")
     
     def setup(self) -> float:
-        """
-        初始化系统
-        
-        返回:
-            setup_time: 初始化耗时
-        """
+
         start = time.perf_counter()
-        # CCS23 不需要复杂的密码学设置
+        # CCS23 does not require complex cryptographic setup
         elapsed = time.perf_counter() - start
         self.metrics['setup_time'] = elapsed
-        print(f"   CCS23 初始化完成: {elapsed:.4f}秒")
+        print(f"   CCS23 initialization completed: {elapsed:.4f}s")
         return elapsed
     
     def register_user(self, user_id: int) -> Tuple[int, Any]:
-        """
-        注册用户（CCS23 中简单记录）
-        
-        返回:
-            (sk, pk) 这里返回虚拟值
-        """
+
         self.metrics['keygen_times'].append(0.0)
 
         register_start = time.perf_counter()
@@ -168,7 +136,7 @@ class CCS23ExperimentWrapper:
         register_elapsed = time.perf_counter() - register_start
         self.metrics['register_times'].append(register_elapsed)
         
-        # CCS23 中不需要真正的密钥，返回虚拟值
+        # CCS23 does not require real keys; return placeholders
         return user_id, f"dummy_pk_{user_id}"
     
     def encrypt_dataset(self, 
@@ -176,18 +144,13 @@ class CCS23ExperimentWrapper:
                        data: List[List[float]],
                        policy: List[int],
                        metadata: Optional[Dict] = None) -> Tuple[Dict, Any, str]:
-        """
-        CCS23 中"加密"数据集（实际存储明文）
-        
-        返回:
-            (C_m, sk_h_s, dataset_id) - 格式兼容
-        """
-        # 生成数据集ID
+
+        # Generate dataset ID
         import time
         timestamp = int(time.time() * 1000)
         dataset_id = f"ds_{owner_id}_{timestamp}"
         
-        # 存储明文数据
+        # Store plaintext data
         if owner_id not in self.datasets:
             self.datasets[owner_id] = {}
         
@@ -198,11 +161,11 @@ class CCS23ExperimentWrapper:
             'store_time': time.time()
         }
         
-        # 明文基线不做加密计算，耗时固定记为 0
+        # Plaintext baseline performs no encryption; fixed encryption time is 0
         elapsed = 0.0
         self.metrics['encrypt_times'].append(elapsed)
         
-        # 测量数据大小（用于通信开销对比）
+        # Measure data size (for communication-overhead comparison)
         import sys
         import pickle
         size = sys.getsizeof(pickle.dumps(data))
@@ -213,11 +176,11 @@ class CCS23ExperimentWrapper:
             'records': len(data)
         })
 
-        self._report_progress('数据存储', len(data), len(data))
+        self._report_progress('Data storage', len(data), len(data))
         
-        print(f"    CCS23 存储数据: {elapsed*1000:.2f} ms (明文基线), 数据大小: {size/1024:.2f} KB")
+        print(f"    CCS23 data storage: {elapsed*1000:.2f} ms (plaintext baseline), data size: {size/1024:.2f} KB")
         
-        # 返回格式兼容的元数据
+        # Return metadata in a format-compatible structure
         C_m = {
             'type': 'ccs23_plain',
             'dataset_id': dataset_id,
@@ -229,11 +192,11 @@ class CCS23ExperimentWrapper:
         return C_m, None, dataset_id
     
     def store_dataset(self, owner_id: int, dataset_id: str, C_m: Dict, sk_h_s: Any):
-        """CCS23 中不需要额外存储（已在 encrypt_dataset 中完成）"""
+        
         pass
 
     def prepare_query_model(self, querier_id: int, model: Any) -> Any:
-        """Plaintext baseline reuses the same model object across repeated queries."""
+        
         return model
     
     def execute_query(self,
@@ -243,15 +206,10 @@ class CCS23ExperimentWrapper:
                      model: Any,
                      prepared_model: Any = None,
                      progress_label: Optional[str] = None) -> Optional[List[float]]:
-        """
-        CCS23 中执行明文查询
-        
-        返回:
-            查询结果
-        """
-        # 检查数据集是否存在
+
+        # Check whether dataset exists
         if owner_id not in self.datasets or dataset_id not in self.datasets[owner_id]:
-            print(f"      数据集不存在")
+            print(f"      Dataset does not exist")
             return None
         
         dataset_info = self.datasets[owner_id][dataset_id]
@@ -262,7 +220,7 @@ class CCS23ExperimentWrapper:
         _authorized = querier_id in policy
         self.metrics['check_times'].append(time.perf_counter() - check_start)
 
-        # 查询请求阶段通信量：统一口径，统计发送给服务器的请求包
+        # Query-request stage communication: unified accounting of packets sent to the server
         active_model = prepared_model if prepared_model is not None else model
 
         req_payload = {
@@ -279,21 +237,21 @@ class CCS23ExperimentWrapper:
             'records': len(data)
         })
         
-        # CCS23 中不检查权限（直接访问）
+        # CCS23 baseline does not enforce access control (direct access)
         
-        # 执行明文查询
+        # Execute plaintext query
         start_query = time.perf_counter()
         
         total_records = len(data)
         results = []
         if isinstance(active_model, list):
-            # 点积模型: y = model · x
+            # Dot-product model: y = model · x
             for index, record in enumerate(data, start=1):
-                # 确保维度匹配
+                # Ensure dimensions match
                 min_len = min(len(active_model), len(record))
                 result = sum(active_model[i] * record[i] for i in range(min_len))
                 results.append(result)
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         elif isinstance(active_model, dict) and active_model.get('type') == 'neural_network':
             for index, record in enumerate(data, start=1):
                 values = [float(v) for v in record]
@@ -329,10 +287,10 @@ class CCS23ExperimentWrapper:
                     values = next_values
 
                 results.append(values[0] if values else 0.0)
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         elif isinstance(active_model, dict) and active_model.get('type') == 'decision_tree':
-            # 简单决策树：统一基线逻辑
-            # 规则: feature[0] <= 0.5 -> 左叶子，否则右叶子
+            # Simple decision tree using unified baseline logic
+            # Rule: feature[0] <= 0.5 -> left leaf, otherwise right leaf
             nodes = active_model.get('nodes', [])
             node_map = {n.get('id'): n for n in nodes}
             root_id = active_model.get('root', 0)
@@ -359,19 +317,19 @@ class CCS23ExperimentWrapper:
                         current_id = node.get('right')
                     depth += 1
                 else:
-                    # 防御性回退
+                    # Defensive fallback
                     results.append(0.0)
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         else:
-            # 默认处理
+            # Default handling
             for index, record in enumerate(data, start=1):
                 results.append(float(np.random.randn()))
-                self._report_progress('查询计算', index, total_records, progress_label)
+                self._report_progress('Query computation', index, total_records, progress_label)
         
         query_time = time.perf_counter() - start_query
         self.metrics['query_times'].append(query_time)
 
-        # 返回包阶段通信量：明文结果返回
+        # Response-packet stage communication: plaintext results returned
         res_size = self._safe_obj_size(results, fallback=max(1, len(results)) * 16)
         self.metrics['communication_sizes'].append({
             'type': 'decrypt',
@@ -379,18 +337,18 @@ class CCS23ExperimentWrapper:
             'records': len(results)
         })
         
-        # CCS23 中解密时间为0
+        # Decryption time is 0 in CCS23 baseline
         decrypt_time = 0
         self.metrics['decrypt_times'].append(decrypt_time)
         
-        self._report_progress('结果返回', len(results), len(results), progress_label)
-        print(f"      明文结果返回: {len(results)}/{len(results)}")
-        print(f"    CCS23 查询时间: {query_time*1000:.2f} ms, 结果数量: {len(results)}")
+        self._report_progress('Result return', len(results), len(results), progress_label)
+        print(f"      Plaintext results returned: {len(results)}/{len(results)}")
+        print(f"    CCS23 query time: {query_time*1000:.2f} ms, number of results: {len(results)}")
         
         return results
     
     def reset_metrics(self):
-        """重置实验指标"""
+
         self.metrics = {
             'setup_time': 0,
             'keygen_times': [],
@@ -404,10 +362,10 @@ class CCS23ExperimentWrapper:
         }
     
     def get_metrics(self) -> Dict:
-        """获取所有实验指标"""
+
         metrics = self.metrics.copy()
         
-        # 计算平均值
+        # Compute averages
         if metrics['encrypt_times']:
             metrics['avg_encrypt_time'] = np.mean(metrics['encrypt_times'])
             metrics['std_encrypt_time'] = np.std(metrics['encrypt_times'])
@@ -424,7 +382,7 @@ class CCS23ExperimentWrapper:
             metrics['avg_decrypt_time'] = np.mean(metrics['decrypt_times'])
             metrics['std_decrypt_time'] = np.std(metrics['decrypt_times'])
         
-        # 通信大小
+        # Communication size
         if metrics['communication_sizes']:
             sizes = [s['size'] for s in metrics['communication_sizes']]
             metrics['avg_communication_size'] = np.mean(sizes)

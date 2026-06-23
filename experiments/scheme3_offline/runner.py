@@ -1,11 +1,4 @@
 # decart/experiments/scheme3_offline/runner.py
-"""
-线下密钥分发方案实验运行器
-作为访问控制效率上限基准：
-- 密钥线下预分发
-- Check算法为线下授权表查询
-"""
-
 import sys
 import os
 import time
@@ -15,7 +8,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass, asdict
 
-# 添加项目根目录到路径
+# Add the project root directory to sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
@@ -31,28 +24,27 @@ from experiments.scheme3_offline.wrapper import OfflineSchemeExperimentWrapper
 
 @dataclass
 class ExperimentConfig:
-    """实验配置"""
-    # 系统参数
-    N: int = Config.MAX_USERS  # 最大用户数
-    n: int = Config.BLOCK_SIZE  # 每块用户数（接口兼容）
+    # System parameters
+    N: int = Config.MAX_USERS  # Maximum number of users
+    n: int = Config.BLOCK_SIZE  # Users per block (API compatibility)
     
-    # 数据参数
-    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # 数据记录数
-    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # 记录维度
+    # Data parameters
+    num_records: int = Config.EXPERIMENT_NUM_RECORDS  # Number of data records
+    record_dim: int = Config.EXPERIMENT_RECORD_DIM   # Record dimension
     dataset: str = 'synthetic'
     mnist_data_dir: str = 'data'
     model_source: str = 'synthetic'
     trained_models_dir: str = 'experiments/models/trained'
     
-    # 模型参数
-    model_types: List[str] = None  # 要测试的模型类型
+    # Model parameters
+    model_types: List[str] = None  # Model types to test
     
-    # 策略参数
-    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # 访问策略中的用户数
+    # Policy parameters
+    policy_size: int = Config.EXPERIMENT_POLICY_SIZE  # Number of users in access policy
     num_queriers: int = 1
     
-    # 实验参数
-    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # 重复运行次数
+    # Experiment parameters
+    num_runs: int = Config.EXPERIMENT_NUM_RUNS      # Number of repeated runs
     save_results: bool = True
     results_dir: Optional[str] = None
     
@@ -60,7 +52,7 @@ class ExperimentConfig:
         if self.model_types is None:
             self.model_types = ['dot', 'decision_tree', 'neural_network']
         if self.num_queriers < 1:
-            raise ValueError('num_queriers 必须至少为 1')
+            raise ValueError('num_queriers must be at least 1')
         if self.dataset not in {'synthetic', 'mnist', 'uci_har'}:
             raise ValueError("dataset must be 'synthetic', 'mnist', or 'uci_har'")
         dataset_spec = get_dataset_spec(self.dataset)
@@ -72,7 +64,7 @@ class ExperimentConfig:
 
 
 class ExperimentRunner:
-    """Offline 方案实验运行器（线下密钥分发）"""
+
     
     def __init__(self, config: ExperimentConfig):
         self.config = config
@@ -82,7 +74,7 @@ class ExperimentRunner:
             'summary': {}
         }
         
-        # 为每种模型类型创建结果容器
+        # Create a result container for each model type
         for model_type in config.model_types:
             self.results['models'][model_type] = {
                 'setup_times': [],
@@ -112,94 +104,88 @@ class ExperimentRunner:
                 'runs': []
             }
         
-        # 创建结果目录
+        # Create results directory
         if config.save_results:
             os.makedirs(config.results_dir, exist_ok=True)
     
     def generate_test_data(self, run_id: int = 0) -> Tuple[List[List[float]], List[int]]:
-        """生成测试数据"""
         if self.config.dataset != 'synthetic':
-            print(f"\n加载 {self.config.dataset} 样本: {self.config.mnist_data_dir}")
+            print(f"\nLoading {self.config.dataset} samples from: {self.config.mnist_data_dir}")
             return load_experiment_records(self.config.dataset, self.config.num_records, data_dir=self.config.mnist_data_dir)
 
         return generate_synthetic_records(self.config.num_records, self.config.record_dim, run_id)
     
     def generate_model(self, model_type: str, run_id: int = 0) -> Any:
-        """根据模型类型生成模型"""
         if self.config.model_source == 'trained':
-            print(f"   加载训练好的 {model_type} 模型...")
+            print(f"   Loading trained {model_type} model...")
             return load_trained_experiment_model(model_type, self.config.trained_models_dir, dataset_name=self.config.dataset)
         
         if model_type == 'dot':
-            # 点积模型
-            print(f"   生成点积模型...")
+            # Dot-product model
+            print(f"   Generating dot-product model...")
             return generate_synthetic_dot_model(self.config.record_dim, run_id)
         
         elif model_type == 'decision_tree':
-            # 决策树模型
-            print(f"   生成决策树模型...")
+            # Decision-tree model
+            print(f"   Generating decision-tree model...")
             return generate_synthetic_decision_tree()
         
         elif model_type == 'neural_network':
-            # 神经网络模型
-            print(f"   生成神经网络模型...")
+            # Neural-network model
+            print(f"   Generating neural-network model...")
             
             return generate_synthetic_shallow_mlp(self.config.record_dim, run_id)
         
         else:
-            raise ValueError(f"未知模型类型: {model_type}")
+            raise ValueError(f"Unknown model type: {model_type}")
     
     def register_all_users(self, wrapper: OfflineSchemeExperimentWrapper, policy: List[int]):
-        """注册所有需要的用户（线下分发密钥）"""
-        print(f"\n 线下分发密钥...")
+        print(f"\n Offline key distribution...")
         for uid in policy:
             sk, pk = wrapper.register_user(uid)
-            print(f"   用户 {uid} 获得密钥对")
+            print(f"   User {uid} received key pair")
     
     def run_single_experiment(self, run_id: int, model_type: str) -> Optional[Dict]:
-        """运行单次实验"""
-        print(f"\n{'='*60}")
-        print(f" [Offline方案] 运行实验 {run_id+1}/{self.config.num_runs} - 模型: {model_type}")
-        print(f"{'='*60}")
+        print(f" [Offline scheme] Running experiment {run_id+1}/{self.config.num_runs} - model: {model_type}")
         
         try:
-            # 初始化实验环境
+            # Initialize experiment environment
             wrapper = OfflineSchemeExperimentWrapper(N=self.config.N, n=self.config.n)
             setup_time = wrapper.setup()
             setup_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             wrapper.reset_metrics()
             
-            # 定义用户ID
+            # Define user IDs
             owner_id = 5
             active_querier_id = owner_id + 1
             if active_querier_id >= self.config.N:
-                raise ValueError(f"当前 N={self.config.N} 无法分配查询用户")
+                raise ValueError(f"Cannot allocate a querying user with current N={self.config.N}")
             query_repetitions = self.config.num_queriers
             
-            # 生成访问策略
+            # Generate access policy
             policy = list(range(min(self.config.policy_size, self.config.N - 2)))
             policy.append(owner_id)
             policy.append(active_querier_id)
             policy = list(set(policy))
             
-            # 线下分发密钥
+            # Offline key distribution
             self.register_all_users(wrapper, policy)
             register_auxiliary_sizes = wrapper.get_auxiliary_sizes()
             
-            # 生成测试数据
+            # Generate test data
             data, _ = self.generate_test_data(run_id)
             
-            # 生成模型
+            # Generate model
             model = self.generate_model(model_type, run_id)
             
-            # 加密数据集
-            print(f"\n 加密数据集...")
+            # Encrypt dataset
+            print(f"\n Encrypting dataset...")
             C_m, sk_h_s, ds_id = wrapper.encrypt_dataset(owner_id, data, policy)
 
             prepared_model = wrapper.prepare_query_model(active_querier_id, model) if hasattr(wrapper, 'prepare_query_model') else None
             
-            # 执行查询
-            print(f"\n 执行查询 ({query_repetitions} 次重复查询, querier={active_querier_id})...")
+            # Execute queries
+            print(f"\n Executing queries ({query_repetitions} repeated queries, querier={active_querier_id})...")
             results = None
             total_results = 0
             for query_index in range(query_repetitions):
@@ -220,7 +206,7 @@ class ExperimentRunner:
                 else:
                     print(f"   {query_label} Offline query done, no results returned")
             
-            # 收集指标
+            # Collect metrics
             metrics = wrapper.get_metrics()
             keygen_times = wrapper.metrics['keygen_times']
             register_times = wrapper.metrics['register_times']
@@ -233,7 +219,7 @@ class ExperimentRunner:
                 for s in wrapper.metrics['communication_sizes']
             ]
             
-            # 收集该模型类型的指标
+            # Collect metrics for this model type
             phase_comm = {'upload': 0, 'check': 0, 'query': 0, 'decrypt': 0}
             for c in wrapper.metrics['communication_sizes']:
                 if isinstance(c, dict):
@@ -276,31 +262,29 @@ class ExperimentRunner:
             }
             
             if results:
-                print(f"\n   查询成功! 结果数量: {len(results)}")
-                print(f"   结果示例: {results[:3]}")
+                print(f"\n   Query succeeded! Number of results: {len(results)}")
+                print(f"   Result sample: {results[:3]}")
             
             return model_metrics
             
         except Exception as e:
-            print(f"\n 实验运行失败: {e}")
+            print(f"\n Experiment run failed: {e}")
             import traceback
             traceback.print_exc()
             return None
     
     def run(self) -> Dict:
-        """运行完整实验"""
+
         print("\n" + "="*80)
-        print(" 开始 Offline 方案实验 (线下密钥分发, Check开销=0)")
+        print(" Starting Offline-scheme experiment (offline key distribution, Check overhead = 0)")
         print("="*80)
-        print(f"\n 实验配置:")
+        print(f"\n Experiment configuration:")
         for key, value in asdict(self.config).items():
             print(f"   {key}: {value}")
         
-        # 对每种模型类型运行实验
+        # Run experiments for each model type
         for model_type in self.config.model_types:
-            print(f"\n{'#'*70}")
-            print(f" 测试模型类型: {model_type}")
-            print(f"{'#'*70}")
+            print(f" Testing model type: {model_type}")
             
             model_results = self.results['models'][model_type]
             
@@ -308,7 +292,7 @@ class ExperimentRunner:
                 run_result = self.run_single_experiment(i, model_type)
                 
                 if run_result:
-                    # 累加结果
+                    # Accumulate results
                     model_results['setup_times'].append(run_result.get('setup_time', 0))
                     model_results['keygen_times'].append(run_result.get('keygen_time', 0))
                     model_results['register_times'].append(run_result.get('register_time', 0))
@@ -357,27 +341,27 @@ class ExperimentRunner:
                         'num_results': run_result['num_results']
                     })
                     
-                    print(f"\n      运行 {i+1} 完成: 查询时间 {run_result['query_time']*1000:.2f} ms, Check时间 {run_result['check_time']*1000:.3f} ms")
+                    print(f"\n      Run {i+1} completed: query time {run_result['query_time']*1000:.2f} ms, Check time {run_result['check_time']*1000:.3f} ms")
                 else:
-                    print(f"\n      运行 {i+1} 失败")
+                    print(f"\n      Run {i+1} failed")
         
-        # 计算统计
+        # Compute statistics
         self._compute_statistics()
         
-        # 保存结果
+        # Save results
         if self.config.save_results:
             self.save_results()
         
         return self.results
     
     def _compute_statistics(self):
-        """计算统计指标"""
+
         summary = {}
         
         for model_type, model_data in self.results['models'].items():
             stats = {}
 
-            # 初始化时间
+            # Setup time
             if model_data['setup_times']:
                 times = model_data['setup_times']
                 stats['avg_setup_time'] = float(np.mean(times))
@@ -399,7 +383,7 @@ class ExperimentRunner:
                 stats['min_register_time'] = float(np.min(times))
                 stats['max_register_time'] = float(np.max(times))
             
-            # 加密时间
+            # Encryption time
             if model_data['encrypt_times']:
                 times = model_data['encrypt_times']
                 stats['avg_encrypt_time'] = float(np.mean(times))
@@ -407,7 +391,7 @@ class ExperimentRunner:
                 stats['min_encrypt_time'] = float(np.min(times))
                 stats['max_encrypt_time'] = float(np.max(times))
             
-            # 查询时间
+            # Query time
             if model_data['query_times']:
                 times = model_data['query_times']
                 stats['avg_query_time'] = float(np.mean(times))
@@ -415,7 +399,7 @@ class ExperimentRunner:
                 stats['min_query_time'] = float(np.min(times))
                 stats['max_query_time'] = float(np.max(times))
             
-            # 解密时间
+            # Decryption time
             if model_data['decrypt_times']:
                 times = model_data['decrypt_times']
                 stats['avg_decrypt_time'] = float(np.mean(times))
@@ -423,13 +407,13 @@ class ExperimentRunner:
                 stats['min_decrypt_time'] = float(np.min(times))
                 stats['max_decrypt_time'] = float(np.max(times))
             
-            # Check时间
+            # Check time
             if model_data['check_times']:
                 times = model_data['check_times']
                 stats['avg_check_time'] = float(np.mean(times))
                 stats['total_check_time'] = float(np.sum(times))
             
-            # 通信开销
+            # Communication overhead
             if model_data['communication_sizes']:
                 sizes = model_data['communication_sizes']
                 stats['avg_communication_size'] = float(np.mean(sizes)) / 1024  # KB
@@ -458,17 +442,12 @@ class ExperimentRunner:
         
         self.results['summary'] = summary
         
-        # 打印结果
-        print("\n" + "="*80)
-        print("📊 Offline 方案实验结果 (线下密钥分发)")
-        print("="*80)
-        
         for model_type, stats in summary.items():
-            print(f"\n 模型类型: {model_type}")
+            print(f"\n Model type: {model_type}")
             for key, value in stats.items():
                 if 'time' in key:
                     if key == 'avg_check_time':
-                        print(f"   {key}: {value*1000:.3f} ms (接近0)")
+                        print(f"   {key}: {value*1000:.3f} ms (close to 0)")
                     else:
                         print(f"   {key}: {value*1000:.2f} ms")
                 elif 'size' in key:
@@ -477,7 +456,7 @@ class ExperimentRunner:
                     print(f"   {key}: {value}")
     
     def save_results(self):
-        """保存实验结果"""
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         json_filename = f"offline_exp_{timestamp}.json"
         json_path = os.path.join(self.config.results_dir, json_filename)
@@ -500,37 +479,35 @@ class ExperimentRunner:
         with open(json_path, 'w') as f:
             json.dump(json_results, f, indent=2)
         
-        print(f"\n   Offline 方案实验结果已保存:")
+        print(f"\n   Offline-scheme experiment results saved:")
         print(f"   JSON: {json_path}")
 
 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Offline 方案实验")
-    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="最大用户数")
-    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="每块用户数")
-    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="数据记录数")
-    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="记录维度")
-    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="数据集来源")
-    parser.add_argument("--mnist-data-dir", type=str, default="data", help="MNIST 缓存目录")
-    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="模型来源")
-    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="训练模型目录")
-    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="策略大小")
-    parser.add_argument("--num-queriers", type=int, default=1, help="真实查询者数量")
-    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="重复运行次数")
+    parser = argparse.ArgumentParser(description="Offline-scheme experiment")
+    parser.add_argument("--N", type=int, default=Config.MAX_USERS, help="maximum number of users")
+    parser.add_argument("--n", type=int, default=Config.BLOCK_SIZE, help="users per block")
+    parser.add_argument("--num-records", type=int, default=Config.EXPERIMENT_NUM_RECORDS, help="number of data records")
+    parser.add_argument("--record-dim", type=int, default=Config.EXPERIMENT_RECORD_DIM, help="record dimension")
+    parser.add_argument("--dataset", choices=["synthetic", "mnist", "uci_har"], default="synthetic", help="dataset source")
+    parser.add_argument("--mnist-data-dir", type=str, default="data", help="MNIST cache directory")
+    parser.add_argument("--model-source", choices=["synthetic", "trained"], default="synthetic", help="model source")
+    parser.add_argument("--trained-models-dir", type=str, default="experiments/models/trained", help="trained models directory")
+    parser.add_argument("--policy-size", type=int, default=Config.EXPERIMENT_POLICY_SIZE, help="policy size")
+    parser.add_argument("--num-queriers", type=int, default=1, help="number of real queriers")
+    parser.add_argument("--num-runs", type=int, default=Config.EXPERIMENT_NUM_RUNS, help="number of repeated runs")
     parser.add_argument("--model-types", nargs="+", 
                        default=['dot', 'decision_tree', 'neural_network'],
-                       help="模型类型列表")
-    parser.add_argument("--results-dir", type=str, default=None, help="结果保存目录")
-    parser.add_argument("--no-save", action="store_true", help="不保存结果")
+                       help="list of model types")
+    parser.add_argument("--results-dir", type=str, default=None, help="results output directory")
+    parser.add_argument("--no-save", action="store_true", help="do not save results")
     
     args = parser.parse_args()
     
-    print("\n" + "="*80)
-    print(" 启动 Offline 方案实验 (线下密钥分发, Check开销=0)")
-    print("="*80)
-    print(f"\n 命令行参数:")
+    print(" Launching Offline-scheme experiment (offline key distribution, Check overhead = 0)")
+    print(f"\n Command-line arguments:")
     print(f"   N: {args.N}")
     print(f"   n: {args.n}")
     print(f"   num-records: {args.num_records}")
@@ -565,7 +542,3 @@ if __name__ == "__main__":
     
     runner = ExperimentRunner(config)
     results = runner.run()
-    
-    print("\n" + "="*80)
-    print("   Offline 方案实验完成")
-    print("="*80)
