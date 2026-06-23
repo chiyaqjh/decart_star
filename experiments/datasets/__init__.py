@@ -42,6 +42,3 @@ __all__ = [
 
 __version__ = "1.0.0"
 __description__ = "DeCart 实验数据集库 - MNIST / UCI HAR"
-
-print(f"✅ 加载 DeCart 实验数据集模块 v{__version__}")
-print(f"   可用数据集: MNIST, UCI HAR")

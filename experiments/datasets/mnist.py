@@ -1,9 +1,4 @@
 # decart/experiments/datasets/mnist.py
-"""
-MNIST 数据集加载和预处理模块
-用于MLP和SVM模型的训练和测试
-完全非模拟，真实MNIST数据
-"""
 
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -15,12 +10,6 @@ import time
 
 
 class MNISTDataLoader:
-    """
-    MNIST数据集加载器
-    
-    提供统一的接口加载MNIST数据集
-    支持数据增强、归一化、批量加载等
-    """
     
     def __init__(self, 
                  data_dir: str = './data',
@@ -28,59 +17,49 @@ class MNISTDataLoader:
                  num_workers: int = 0,
                  pin_memory: bool = True,
                  normalize: bool = True):
-        """
-        初始化MNIST数据加载器
-        
-        参数:
-            data_dir: 数据存储目录
-            batch_size: 批次大小
-            num_workers: 数据加载线程数
-            pin_memory: 是否锁定内存（加速GPU传输）
-            normalize: 是否归一化到[0,1]
-        """
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.normalize = normalize
         
-        # 创建数据目录
+        # Create the data directory
         os.makedirs(data_dir, exist_ok=True)
         
-        # 定义数据变换
+        # Define data transforms
         self.transform_train, self.transform_test = self._get_transforms()
         
-        # 数据集
+        # Datasets
         self.train_dataset = None
         self.test_dataset = None
         self.val_dataset = None
         
-        print(f"\n✅ MNIST数据加载器初始化")
-        print(f"   数据目录: {data_dir}")
-        print(f"   批次大小: {batch_size}")
-        print(f"   归一化: {normalize}")
+        print(f"\n MNIST data loader initialized")
+        print(f"   Data directory: {data_dir}")
+        print(f"   Batch size: {batch_size}")
+        print(f"   Normalization: {normalize}")
     
     def _get_transforms(self) -> Tuple[transforms.Compose, transforms.Compose]:
         """
-        获取数据变换
-        
-        返回:
+        Get data transforms.
+
+        Returns:
             (train_transform, test_transform)
         """
-        # 基础变换：转换为张量
+        # Base transform: convert to tensor
         transform_list = [transforms.ToTensor()]
         
-        # 归一化到[0,1]
+        # Normalize to [0,1]
         if self.normalize:
-            # MNIST默认是[0,1]，这里显式归一化
+            # MNIST is [0,1] by default; normalize explicitly here
             transform_list.append(transforms.Normalize((0.1307,), (0.3081,)))
         
-        # 测试集变换（无数据增强）
+        # Test-set transform (no augmentation)
         test_transform = transforms.Compose(transform_list.copy())
         
-        # 训练集变换（添加数据增强）
+        # Training-set transform (with optional augmentation)
         train_transform_list = transform_list.copy()
-        # 可选：添加轻微的数据增强
+        # Optional: add mild data augmentation
         # train_transform_list.insert(0, transforms.RandomAffine(degrees=5, translate=(0.1, 0.1)))
         
         train_transform = transforms.Compose(train_transform_list)
@@ -91,24 +70,10 @@ class MNISTDataLoader:
                   use_validation: bool = True,
                   val_ratio: float = 0.1,
                   download: bool = True) -> Dict[str, DataLoader]:
-        """
-        加载MNIST数据集
-        
-        参数:
-            use_validation: 是否划分验证集
-            val_ratio: 验证集比例
-            download: 是否下载数据
-        
-        返回:
-            包含数据加载器的字典
-        """
-        print(f"\n{'='*60}")
-        print(f"加载MNIST数据集")
-        print(f"{'='*60}")
         
         start_time = time.time()
         
-        # 加载训练集
+        # Load training set
         self.train_dataset = datasets.MNIST(
             root=self.data_dir,
             train=True,
@@ -116,7 +81,7 @@ class MNISTDataLoader:
             transform=self.transform_train
         )
         
-        # 加载测试集
+        # Load test set
         self.test_dataset = datasets.MNIST(
             root=self.data_dir,
             train=False,
@@ -126,28 +91,28 @@ class MNISTDataLoader:
         
         load_time = time.time() - start_time
         
-        print(f"✅ 数据集加载完成! 时间: {load_time:.2f}s")
-        print(f"   训练集: {len(self.train_dataset)} 张图片")
-        print(f"   测试集: {len(self.test_dataset)} 张图片")
-        print(f"   图片尺寸: 28x28")
-        print(f"   类别数: 10")
+        print(f"   Dataset loading completed! Time: {load_time:.2f}s")
+        print(f"   Training set: {len(self.train_dataset)} images")
+        print(f"   Test set: {len(self.test_dataset)} images")
+        print(f"   Image size: 28x28")
+        print(f"   Number of classes: 10")
         
-        # 划分验证集
+        # Split validation set
         if use_validation:
             val_size = int(len(self.train_dataset) * val_ratio)
             train_size = len(self.train_dataset) - val_size
             
-            # 随机划分
+            # Random split
             indices = list(range(len(self.train_dataset)))
             np.random.shuffle(indices)
             
             train_indices = indices[:train_size]
             val_indices = indices[train_size:]
             
-            # 创建训练集子集
+            # Create training subset
             self.train_dataset = Subset(self.train_dataset, train_indices)
             
-            # 创建验证集（使用测试变换）
+            # Create validation set (using test transform)
             full_train_dataset = datasets.MNIST(
                 root=self.data_dir,
                 train=True,
@@ -156,27 +121,18 @@ class MNISTDataLoader:
             )
             self.val_dataset = Subset(full_train_dataset, val_indices)
             
-            print(f"   验证集: {len(self.val_dataset)} 张图片 ({val_ratio*100:.0f}%)")
+            print(f"   Validation set: {len(self.val_dataset)} images ({val_ratio*100:.0f}%)")
         
-        # 创建数据加载器
+        # Create data loaders
         loaders = self.get_dataloaders()
         
         return loaders
     
     def get_dataloaders(self) -> Dict[str, DataLoader]:
-        """
-        获取PyTorch数据加载器
-        
-        返回:
-            {
-                'train': train_loader,
-                'test': test_loader,
-                'val': val_loader (如果存在)
-            }
-        """
+
         loaders = {}
         
-        # 训练集加载器
+        # Training loader
         if self.train_dataset is not None:
             loaders['train'] = DataLoader(
                 self.train_dataset,
@@ -186,7 +142,7 @@ class MNISTDataLoader:
                 pin_memory=self.pin_memory
             )
         
-        # 测试集加载器
+        # Test loader
         if self.test_dataset is not None:
             loaders['test'] = DataLoader(
                 self.test_dataset,
@@ -196,7 +152,7 @@ class MNISTDataLoader:
                 pin_memory=self.pin_memory
             )
         
-        # 验证集加载器
+        # Validation loader
         if self.val_dataset is not None:
             loaders['val'] = DataLoader(
                 self.val_dataset,
@@ -209,27 +165,14 @@ class MNISTDataLoader:
         return loaders
     
     def get_numpy_data(self, flatten: bool = True) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-        """
-        获取NumPy格式的数据（用于SVM等）
-        
-        参数:
-            flatten: 是否展平图像 (784维)
-        
-        返回:
-            {
-                'train': (X_train, y_train),
-                'test': (X_test, y_test),
-                'val': (X_val, y_val) (如果存在)
-            }
-        """
         result = {}
         
-        # 训练集
+        # Training set
         if self.train_dataset is not None:
             X_train = []
             y_train = []
             
-            # 处理原始数据集或Subset
+            # Handle raw dataset or Subset
             if isinstance(self.train_dataset, Subset):
                 dataset = self.train_dataset.dataset
                 indices = self.train_dataset.indices
@@ -254,7 +197,7 @@ class MNISTDataLoader:
             
             result['train'] = (np.array(X_train), np.array(y_train))
         
-        # 测试集
+        # Test set
         if self.test_dataset is not None:
             X_test = []
             y_test = []
@@ -270,7 +213,7 @@ class MNISTDataLoader:
             
             result['test'] = (np.array(X_test), np.array(y_test))
         
-        # 验证集
+        # Validation set
         if self.val_dataset is not None:
             X_val = []
             y_val = []
@@ -302,19 +245,10 @@ class MNISTDataLoader:
         return result
     
     def get_sample_batch(self, split: str = 'train') -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        获取一个样本批次（用于测试）
-        
-        参数:
-            split: 'train', 'test', 或 'val'
-        
-        返回:
-            (data, targets)
-        """
         loaders = self.get_dataloaders()
         
         if split not in loaders:
-            raise ValueError(f"无效的数据集划分: {split}")
+            raise ValueError(f"Invalid dataset split: {split}")
         
         loader = loaders[split]
         data, targets = next(iter(loader))
@@ -322,12 +256,7 @@ class MNISTDataLoader:
         return data, targets
     
     def get_dataset_info(self) -> Dict[str, Any]:
-        """
-        获取数据集信息
-        
-        返回:
-            包含数据集信息的字典
-        """
+
         info = {
             'name': 'MNIST',
             'num_classes': 10,
@@ -343,39 +272,27 @@ class MNISTDataLoader:
         return info
 
 
-# ========== 便捷函数 ==========
+#  Convenience functions
 
 def load_mnist(data_dir: str = './data',
                batch_size: int = 64,
                use_validation: bool = True,
                val_ratio: float = 0.1,
                flatten_for_svm: bool = False) -> Dict[str, Any]:
-    """
-    加载MNIST数据集的便捷函数
-    
-    参数:
-        data_dir: 数据目录
-        batch_size: 批次大小
-        use_validation: 是否使用验证集
-        val_ratio: 验证集比例
-        flatten_for_svm: 是否为SVM返回展平数据
-    
-    返回:
-        包含PyTorch加载器和NumPy数据的字典
-    """
-    # 创建加载器
+
+    # Create loader
     loader = MNISTDataLoader(
         data_dir=data_dir,
         batch_size=batch_size
     )
     
-    # 加载数据
+    # Load data
     pytorch_loaders = loader.load_data(
         use_validation=use_validation,
         val_ratio=val_ratio
     )
     
-    # 获取NumPy格式（用于SVM）
+    # Get NumPy format (for SVM)
     numpy_data = loader.get_numpy_data(flatten=True)
     
     result = {
@@ -391,7 +308,7 @@ def load_mnist(data_dir: str = './data',
 def load_mnist_records(num_records: int,
                        data_dir: str = './data',
                        split: str = 'test') -> Tuple[List[List[float]], List[int]]:
-    """Load a fixed number of flattened MNIST samples for experiment runners."""
+    
     if split not in {'train', 'test'}:
         raise ValueError("split must be 'train' or 'test'")
 
@@ -419,18 +336,11 @@ def load_mnist_records(num_records: int,
 def visualize_mnist_sample(loader: MNISTDataLoader, 
                           num_samples: int = 5,
                           save_path: Optional[str] = None):
-    """
-    可视化MNIST样本
-    
-    参数:
-        loader: MNIST数据加载器
-        num_samples: 样本数量
-        save_path: 保存路径（可选）
-    """
+
     try:
         import matplotlib.pyplot as plt
         
-        # 获取一批数据
+        # Get one batch of data
         data, targets = loader.get_sample_batch('train')
         
         fig, axes = plt.subplots(1, num_samples, figsize=(12, 3))
@@ -447,90 +357,81 @@ def visualize_mnist_sample(loader: MNISTDataLoader,
         
         if save_path:
             plt.savefig(save_path)
-            print(f"✅ 图像已保存到: {save_path}")
+            print(f" Image saved to: {save_path}")
         else:
             plt.show()
         
         plt.close()
         
     except ImportError:
-        print("⚠️ 需要安装matplotlib才能可视化")
+        print(" matplotlib must be installed for visualization")
 
 
-# ========== 测试代码 ==========
+#  Test code
 
 def test_mnist_loader():
-    """测试MNIST数据加载器"""
-    print("\n" + "="*60)
-    print("🧪 测试 MNIST 数据加载器")
-    print("="*60)
     
     try:
-        # 创建临时数据目录
+        # Create a temporary data directory
         import tempfile
         temp_dir = tempfile.mkdtemp()
         
-        print(f"1. 初始化加载器...")
+        print(f"1. Initialize loader...")
         loader = MNISTDataLoader(
             data_dir=temp_dir,
             batch_size=32,
             num_workers=0
         )
         
-        print(f"\n2. 加载数据（使用download=True）...")
+        print(f"\n2. Load data (using download=True)...")
         loaders = loader.load_data(
             use_validation=True,
             val_ratio=0.1,
             download=True
         )
         
-        # 验证数据集大小
+        # Validate dataset sizes
         info = loader.get_dataset_info()
-        print(f"\n3. 数据集信息:")
-        print(f"   训练集: {info['train_size']} 张")
-        print(f"   验证集: {info['val_size']} 张")
-        print(f"   测试集: {info['test_size']} 张")
+        print(f"\n3. Dataset information:")
+        print(f"   Training set: {info['train_size']} images")
+        print(f"   Validation set: {info['val_size']} images")
+        print(f"   Test set: {info['test_size']} images")
         
-        assert info['train_size'] > 0, "训练集为空"
-        assert info['test_size'] > 0, "测试集为空"
+        assert info['train_size'] > 0, "Training set is empty"
+        assert info['test_size'] > 0, "Test set is empty"
         if info['val_size'] > 0:
-            print(f"   ✅ 验证集划分成功")
+            print(f"   Validation split succeeded")
         
-        print(f"\n4. 测试数据加载器...")
+        print(f"\n4. Test data loaders...")
         for split_name, loader_obj in loaders.items():
             data, targets = next(iter(loader_obj))
-            print(f"   {split_name}: 批次形状 {data.shape}, 标签形状 {targets.shape}")
-            assert data.shape[0] == 32, f"批次大小错误: {data.shape[0]}"
+            print(f"   {split_name}: batch shape {data.shape}, label shape {targets.shape}")
+            assert data.shape[0] == 32, f"Incorrect batch size: {data.shape[0]}"
         
-        print(f"\n5. 测试NumPy数据格式...")
+        print(f"\n5. Test NumPy data format...")
         numpy_data = loader.get_numpy_data(flatten=True)
         
         for split_name, (X, y) in numpy_data.items():
-            print(f"   {split_name}: X形状 {X.shape}, y形状 {y.shape}")
-            if split_name != 'test':  # 测试集可能没有验证集那么精确
-                assert X.shape[1] == 784, f"展平维度错误: {X.shape[1]}"
+            print(f"   {split_name}: X shape {X.shape}, y shape {y.shape}")
+            if split_name != 'test':  # The test split may not align as precisely as the validation split
+                assert X.shape[1] == 784, f"Incorrect flattened dimension: {X.shape[1]}"
         
-        print(f"\n✅ 所有MNIST数据加载器测试通过!")
+        print(f"\n All MNIST data loader tests passed!")
         
-        # 清理临时目录
+        # Clean up temporary directory
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
         
         return True
         
     except Exception as e:
-        print(f"❌ 测试失败: {e}")
+        print(f" Test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
 if __name__ == "__main__":
-    # 运行测试
+    # Run tests
     test_mnist_loader()
     
-    print("\n" + "="*60)
-    print("✅ experiments/datasets/mnist.py 实现完成")
-    print("   完全非模拟，真实MNIST数据")
-    print("   支持PyTorch DataLoader和NumPy格式")
-    print("="*60)

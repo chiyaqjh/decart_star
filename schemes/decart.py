@@ -1,9 +1,4 @@
-# decart/schemes/decart.py
-"""
-DeCart 完整实现 - 添加Revoke功能和AI模型支持
-基于对称配对假设 e(G, G) → G_T
-完全实现论文所有算法 (Algorithm 1-4)
-"""
+﻿# decart/schemes/decart.py
 
 import math
 import secrets
@@ -16,13 +11,13 @@ from typing import Dict, List, Tuple, Any, Optional, Union
 from dataclasses import dataclass
 import numpy as np
 
-# 导入核心模块
+# Import core modules
 current_dir = os.path.dirname(os.path.abspath(__file__))
 core_dir = os.path.join(current_dir, '..', 'core')
 if core_dir not in sys.path:
     sys.path.insert(0, core_dir)
 
-# 导入AI模型模块 - 新增
+# Import AI model modules
 from schemes.ai_model import (
     DecisionTreeHE,
     NeuralNetworkHE,
@@ -39,68 +34,59 @@ from config import Config
 
 @dataclass
 class DeCartParams:
-    """DeCart系统参数 - 严格按照论文"""
-    lambda_security: int = 128      # 安全参数λ
-    N: int = Config.MAX_USERS       # 最大用户数N ∈ Z_p
-    n: int = Config.BLOCK_SIZE      # 每块用户数n ∈ Z_p
+    """DeCart"""
+    lambda_security: int = 128      # security parameterλ
+    N: int = Config.MAX_USERS       # maximum usersN ∈ Z_p
+    n: int = Config.BLOCK_SIZE      # users per blockn ∈ Z_p
     
     @property
     def B(self) -> int:
-        """块数 B = ceil(N/n)"""
+        """Number of blocks B = ceil(N/n)"""
         return math.ceil(self.N / self.n)
 
 
 class DeCartSystem:
-    """DeCart完整系统实现 - 包含Revoke功能和AI模型支持"""
     
     def __init__(self, params: Optional[DeCartParams] = None):
-        """
-        初始化DeCart系统
-        """
         self.params = params or DeCartParams(N=Config.MAX_USERS, n=Config.BLOCK_SIZE)
         
-        # 初始化密码学原语
-        print("初始化双线性配对...")
+        # Initialize cryptographic primitives
+        print("Initializing bilinear pairing")
         self.bp = BilinearPairing(enable_cache=True)
         
-        print("初始化同态加密...")
+        print("Initializing homomorphic encryption")
         self.he = HomomorphicEncryption(poly_modulus_degree=Config.POLY_MODULUS_DEGREE)
         
-        print("初始化有限域...")
+        print("Initializing finite field")
         self.ff = FiniteField(p=self.bp.get_group_order())
         
-        print(f"\n DeCart系统初始化")
-        print(f"   基于对称配对假设: e(G, G) → G_T")
-        print(f"   使用bn256适配，主要使用G1作为群G")
-        print(f"   参数: N={self.params.N}, n={self.params.n}, B={self.params.B}")
-        print(f"   素数域: Z_{self.ff.p}")
-        print(f"   支持AI模型: 决策树、神经网络")
+        print(f"\n DeCart system initialized")
+        print(f"   Parameters: N={self.params.N}, n={self.params.n}, B={self.params.B}")
+        print(f"   Prime field: Z_{self.ff.p}")
+
         
-        # 系统状态
+        # System state
         self.crs = None
         self.pp = None
         self.aux = None
         
-        # 存储
+        # Storage
         self.registered_users = {}      # user_id -> registration info
         self.user_secrets = {}           # user_id -> secret info
         self.encrypted_datasets = {}     # owner_id -> C_m
         self.access_policies = {}        # owner_id -> policy
         
-        # ===== 撤销相关状态 =====
-        self._revoked_users = set()           # 已撤销用户集合
-        self._revoked_info = {}                # 撤销信息 {user_id: info}
-        self._revocation_factors = {}          # 撤销因子 {user_id: r_id}
+        # ===== Revocation state =====
+        self._revoked_users = set()           # Revoked user set
+        self._revoked_info = {}                # Revocation info {user_id: info}
+        self._revocation_factors = {}          # Revocation factor {user_id: r_id}
         
-        # ===== 缓存 =====
+        # ===== Cache =====
         self._pairing_cache = {}
         self._e_gg_cache = {}
 
-    # ========== 新增：默认神经网络创建方法 ==========
+    # Default neural network creation method
     def create_default_neural_network(self, input_dim: int = 784, output_dim: int = 10) -> Any:
-        """
-        创建默认的最小单隐层神经网络: input -> 16 -> output。
-        """
         try:
             return NeuralNetworkHE.create_shallow_mlp(
                 input_dim=input_dim,
@@ -110,37 +96,34 @@ class DeCartSystem:
                 output_activation="linear",
             )
         except Exception:
-            print("警告: 无法导入NeuralNetworkHE，使用简化版本")
+            print("Warning: failed to import NeuralNetworkHE")
             return None
 
     def setup(self) -> Tuple[Dict, List, List]:
-        """
-        Setup(λ) → (crs, pp, aux)
-        完善数学计算：明确对称配对假设
-        """
+
         print("\n" + "="*50)
-        print("[Setup] 系统初始化")
+        print("[Setup] System initialization")
         print("="*50)
         
-        # 1. 生成双线性群 Ψ = (p, g, G, G_T, Z_p, e), where e(G, G) → G_T
+        # 1. Generate bilinear group Ψ = (p, g, G, G_T, Z_p, e), where e(G, G) → G_T
         p = self.ff.p
-        g = self.bp.g1  # 使用G1作为群G的表示
+        g = self.bp.g1  
         
-        print("1. 采样随机值 {z_i}...")
+        print("1. Sample random values {z_i}...")
         z_values = [self.ff.random_element() for _ in range(self.params.n)]
         
-        # 2. 计算 h_i = g^{z_i} (在群G中，用G1表示)
-        print("2. 计算 h_i = g^{z_i}...")
+        # 2. Compute h_i = g^{z_i} 
+        print("2. Compute h_i = g^{z_i}...")
         h_i = []
         for z in z_values:
             h = self.bp.exponentiate_g1(g, z)
             h_i.append(h)
         
-        # 3. 计算 H_{i,j} = g^{z_i·z_j}
-        print("3. 计算 H_{i,j} = e(g,g)^{z_i·z_j}（对称半存储）...")
+        # 3. Compute H_{i,j} = g^{z_i*z_j}
+        print("3. compute H_{i,j} = e(g,g)^{z_i·z_j}(symmetric half-storage)...")
         H_ij = {}
         
-        # 基础配对值 e(g,g) - 用 e(g1, g2) 表示
+        # Base pairing value e(g,g) 
         e_gg = self.bp.pairing(self.bp.g1, self.bp.g2)
         
         total_pairs = (self.params.n * (self.params.n - 1)) // 2
@@ -152,76 +135,73 @@ class DeCartSystem:
                 H_ij[(i, j)] = self.bp.exponentiate_gt(e_gg, exponent)
 
             if (i + 1) % progress_step == 0 or (i + 1) == self.params.n:
-                print(f"   H_ij 进度: {i + 1}/{self.params.n} 行, 已生成 {len(H_ij)}/{total_pairs} 个元素")
+                print(f"   H_ij progress: {i + 1}/{self.params.n} rows, generated {len(H_ij)}/{total_pairs} elements")
         
-        # 4. 选择哈希函数 H: G_T → {0,1}*
+        # 4. Select hash function H: G_T → {0,1}*
         def H_gt_to_bytes(gt_elem: Any) -> bytes:
-            """哈希函数 H: G_T → {0,1}*"""
+            """Hash function H: G_T → {0,1}*"""
             try:
                 gt_bytes = self.bp.serialize_gt(gt_elem)
                 return hashlib.sha256(gt_bytes).digest()
             except:
-                # 备选方案
+                # Fallback option
                 gt_str = str(gt_elem).encode()
                 return hashlib.sha256(gt_str).digest()
         
-        # 5. 构建crs
+        # 5. Build CRS
         self.crs = {
             'Ψ': (p, g, self.bp.gt, self.ff, self.bp.pairing),
             'N': self.params.N,
             'B': self.params.B,
             'n': self.params.n,
-            'h_i': h_i,          # 在群G中（G1表示）
-            'H_ij': H_ij,        # 在G_T中
+            'h_i': h_i,          # in group G (G1 representation)
+            'H_ij': H_ij,        # in G_T
             'H': H_gt_to_bytes,
             'z_values': z_values,
-            'e_gg': e_gg,        # e(g,g)基础值
-            'g': g,               # 群G生成元
+            'e_gg': e_gg,        # base value e(g,g)
+            'g': g,               # group G generator
             'p': p
         }
         
-        # 6. 初始化公共参数 pp = (C_{(1)} = 1, ..., C_{(B)} = 1) ∈ G
+        # 6. translatedParameters pp = (C_{(1)} = 1, ..., C_{(B)} = 1) ∈ G
         identity = self.bp.exponentiate_g1(g, 0)
         self.pp = [identity for _ in range(self.params.B)]
         
-        # 7. 初始化辅助参数 aux = (L_1 = {1}, ..., L_N = {1}) ∈ G
+        # 7. translatedParameters aux = (L_1 = {1}, ..., L_N = {1}) ∈ G
         self.aux = [[] for _ in range(self.params.N)]
         
-        print(f"\n Setup完成")
-        print(f"   h_i: {len(h_i)} 个群G元素（G1表示）")
-        print(f"   H_ij: {len(H_ij)} 个G_T元素（对称半存储）")
-        print(f"   基础配对值 e(g,g): 已计算")
+        print(f"\n Setup completed")
+        print(f"   h_i: {len(h_i)} group G elements (G1 representation)")
+        print(f"   H_ij: {len(H_ij)} translatedG_Ttranslated(symmetric half-storage)")
+        print(f"   Base pairing value e(g,g): computed")
         
         return self.crs, self.pp, self.aux
     
-    # ========== KeyGen 算法 ==========
+    #  KeyGen algorithm 
     
     def keygen(self, user_id: int) -> Tuple[int, Any, List[Optional[Any]]]:
-        """
-        KeyGen(u_id) → (sk_id, pk_id, pap_id)
-        完善数学计算，添加撤销检查
-        """
+
         if not (0 <= user_id < self.params.N):
-            raise ValueError(f"用户ID必须在[0, {self.params.N-1}]")
+            raise ValueError(f"User ID must be in [0, {self.params.N-1}]")
         
-        # ===== 新增：检查用户是否已被撤销 =====
+        # ===== Check whether the user has been revoked =====
         if self.is_revoked(user_id):
-            raise ValueError(f"用户 {user_id} 已被撤销，无法生成新密钥")
+            raise ValueError(f"User {user_id} has been revoked and cannot generate a new key")
         
-        print(f"\n[KeyGen] 用户 {user_id} 生成密钥...")
+        print(f"\n[KeyGen] User {user_id} Generating keys...")
         
-        # 1. 生成随机密钥 x_id ∈ Z_p
+        # 1. Generate random secret key x_id ∈ Z_p
         x_id = self.ff.random_element()
         
-        # 2. 计算 u_id' = (u_id mod n) + 1 (1-based)
+        # 2. compute u_id' = (u_id mod n) + 1 (1-based)
         u_id_prime = user_id % self.params.n
         u_id_prime_1based = u_id_prime + 1
         
-        # 3. 计算公钥 pk_id = h_{u_id'}^{x_id} (在群G中)
+        # 3. Compute public key pk_id = h_{u_id'}^{x_id} (translatedGtranslated)
         h_u = self.crs['h_i'][u_id_prime]
         pk_id = self.bp.exponentiate_g1(h_u, x_id)
         
-        # 4. 计算个人辅助参数 pap_id
+        # 4. Compute personal auxiliary parameters pap_id
         pap_id = []
         for i in range(self.params.n):
             i_1based = i + 1
@@ -229,16 +209,16 @@ class DeCartSystem:
             if i_1based == u_id_prime_1based:
                 pap_id.append(None)  # φ
             else:
-                # 获取 H_{i,u_id'}^{x_id}
-                # 先找到 H_{i,u_id'}
+                # Get H_{i,u_id'}^{x_id}
+                # First find H_{i,u_id'}
                 H_key = (i, u_id_prime) if (i, u_id_prime) in self.crs['H_ij'] else (u_id_prime, i)
                 H_val = self.crs['H_ij'][H_key]
                 
-                # 计算 H_{i,u_id'}^{x_id}
+                # compute H_{i,u_id'}^{x_id}
                 pap_element = self.bp.exponentiate_gt(H_val, x_id)
                 pap_id.append(pap_element)
         
-        # 存储用户信息
+        # Store user information
         block_num = user_id // self.params.n
         self.user_secrets[user_id] = {
             'sk_id': x_id,
@@ -250,56 +230,56 @@ class DeCartSystem:
             'user_id': user_id
         }
         
-        print(f"      KeyGen完成")
+        print(f"      KeyGen completed")
         print(f"      sk_id: {x_id}")
         print(f"      u_id': {u_id_prime_1based} (1-based)")
-        print(f"      所属块: {block_num}")
+        print(f"      Block: {block_num}")
         
         return x_id, pk_id, pap_id
     
-    # ========== Register 算法 ==========
+    #  Register algorithm 
     
     def register(self, user_id: int, pk_id: Any, pap_id: List[Optional[Any]]) -> Tuple[List, List]:
         """
         Register(u_id, pk_id, pap_id) → (pp', aux')
-        完善数学验证，添加撤销检查
+        Enhanced mathematical validation with revocation checks
         """
-        print(f"\n[Register] 用户 {user_id} 注册...")
+        print(f"\n[Register] User {user_id} registering...")
         
-        # ===== 修复：如果用户已被撤销，不允许重新注册 =====
+
         if self.is_revoked(user_id):
-            raise ValueError(f"用户 {user_id} 已被撤销，无法重新注册")
+            raise ValueError(f"User {user_id} translatedrevocation")
         
         if user_id not in self.user_secrets:
-            raise ValueError(f"用户 {user_id} 未执行KeyGen")
+            raise ValueError(f"User {user_id} has not executed KeyGen")
         
         user_info = self.user_secrets[user_id]
         u_id_prime = user_info['u_id_prime']
         u_id_prime_1based = user_info['u_id_prime_1based']
         
-        # 1. 验证 pap_id
-        print(f"   验证pap_id...")
+        # 1. Validate pap_id
+        print(f"   Validating pap_id...")
         
         if len(pap_id) != self.params.n:
-            raise ValueError(f"pap_id长度必须为{self.params.n}")
+            raise ValueError(f"pap_id length must be {self.params.n}")
         
         for i in range(self.params.n):
             if i == u_id_prime:
                 if pap_id[i] is not None:
-                    raise ValueError(f"pap_id[{i}] 应该为None (φ)")
+                    raise ValueError(f"pap_id[{i}] should be None (φ)")
             else:
                 if pap_id[i] is None:
-                    raise ValueError(f"pap_id[{i}] 不应该为None")
+                    raise ValueError(f"pap_id[{i}] translatedshould be None")
         
-        print(f"      pap_id格式验证通过")
+        print(f"      pap_idformat validation passed")
         
-        # 2. 计算块编号 k = ceil((u_id + 1)/n)
+        # 2. Compute block index k = ceil((u_id + 1)/n)
         k = math.ceil((user_id + 1) / self.params.n) - 1
         
-        # 3. 更新公共参数 C_{(k)}' = C_{(k)} · pk_id
+        # 3. Update public parameters C_{(k)}' = C_{(k)} · pk_id
         self.pp[k] = pk_id
         
-        # 4. 更新辅助参数 L_j
+        # 4. Update auxiliary parameters L_j
         block_start = k * self.params.n
         block_end = min(block_start + self.params.n, self.params.N)
         
@@ -311,7 +291,7 @@ class DeCartSystem:
             self.aux[j].append(copy.deepcopy(pap_id))
             updated_count += 1
         
-        # 5. 标记用户为已注册
+        # 5. translatedUsertranslatedregistering
         self.registered_users[user_id] = {
             'pk_id': pk_id,
             'block': k,
@@ -322,63 +302,59 @@ class DeCartSystem:
             'register_time': time.time()
         }
         
-        print(f"      Register完成")
-        print(f"      更新块 {k} 的公共参数")
-        print(f"      更新了 {updated_count} 个辅助参数")
-        print(f"      用户 {user_id} 标记为已注册")
+        print(f"      Register completed")
+        print(f"      Update block {k} translatedParameters")
+        print(f"      Updated {updated_count}  auxiliary parameters")
+        print(f"      User {user_id} translatedregistering")
         
         return self.pp, self.aux
     
-    # ========== Encrypt 算法 ==========
+    #  Encrypt algorithm 
     
     def _check_data_range(self, data_records: List[List[float]]):
-        """检查数据范围，避免CKKS溢出"""
         for i, record in enumerate(data_records):
             for j, val in enumerate(record):
                 if abs(val) > 10:
-                    print(f"      数据[{i}][{j}] = {val} 超出建议范围 [-10, 10]")
+                    print(f"      Data[{i}][{j}] = {val} exceeds recommended range [-10, 10]")
                 if math.isnan(val) or math.isinf(val):
-                    raise ValueError(f"数据[{i}][{j}]包含非法值: {val}")
+                    raise ValueError(f"Data[{i}][{j}]contains invalid value: {val}")
     
     def encrypt(self, owner_id: int, access_policy: List[int], 
                data_records: List[List[float]]) -> Tuple[Dict, Any]:
-        """
-        Encrypt(P, {m_i}) → C_m
-        完善数学计算 + 数据范围检查
-        """
+
         if owner_id not in self.registered_users:
-            raise ValueError(f"用户 {owner_id} 未注册")
+            raise ValueError(f"User {owner_id} translatedregistering")
         
-        print(f"\n[Encrypt] 所有者 {owner_id} 加密数据...")
+        print(f"\n[Encrypt] Owner {owner_id} encrypting data...")
         
-        # 检查数据范围
+        # Check data range
         self._check_data_range(data_records)
         
-        # 1. 访问策略
+        # 1. access policy
         n_p = len(access_policy)
-        print(f"   访问策略包含 {n_p} 个用户")
+        print(f"   access policytranslated {n_p} users")
         
-        # 2. 采样随机值 α ∈ Z_p
+        # 2. Sample random values α ∈ Z_p
         alpha = self.ff.random_element()
         
-        # 3. 生成同态加密密钥
+        # 3. Generate homomorphic encryption key
         pk_h = self.he.public_key
         
-        # 4. 采样随机值 (β, γ) ∈ Z_p
+        # 4. Sample random values (β, γ) ∈ Z_p
         beta = self.ff.random_element()
         gamma = self.ff.random_element()
-        print(f"   随机值: α={alpha}, β={beta}, γ={gamma}")
+        print(f"   Random values: α={alpha}, β={beta}, γ={gamma}")
         
-        # 5. 分割同态秘密钥
+        # 5. Split homomorphic secret key
         sk_h_shares = self.he.split_secret_key_shamir(num_shares=2, threshold=2)
         sk_h_s = sk_h_shares[0]
         sk_h_u = sk_h_shares[1]
         
-        # 6. 加密数据
+        # 6. encrypting data
         n_m = len(data_records)
         c6_list = []
         
-        print(f"   加密 {n_m} 条数据记录...")
+        print(f"   Encrypt {n_m} data records...")
         for i, data in enumerate(data_records):
             if isinstance(data, (int, float)):
                 data = [float(data)]
@@ -386,15 +362,15 @@ class DeCartSystem:
                 encrypted = self.he.encrypt(data)
                 c6_list.append(encrypted)
                 if (i + 1) % 10 == 0:
-                    print(f"   已加密 {i+1}/{n_m} 条记录")
+                    print(f"   Encrypted {i+1}/{n_m} records")
             except Exception as e:
-                print(f"      第{i}条数据加密失败: {e}")
+                print(f"      translated{i}data record encryption failed: {e}")
                 raise
         
-        # 7. 计算密文组件
+        # 7. Compute ciphertext components
         c1_list, c2_list, c4_list = [], [], []
         
-        print(f"   计算密文组件...")
+        print(f"   Compute ciphertext components...")
         for u_id in access_policy:
             # k_i = ceil((u_id + 1)/n)
             k_i = math.ceil((u_id + 1) / self.params.n) - 1
@@ -421,7 +397,7 @@ class DeCartSystem:
         # c5 = H[e(g,g)^β] ⊕ (pk_h || sk_h,u)
         c5 = self._compute_c5(beta, pk_h, sk_h_u)
         
-        # 8. 构建完整密文
+        # 8. Build full ciphertext
         C_m = {
             'P': access_policy,
             'c1_i': c1_list,
@@ -439,18 +415,17 @@ class DeCartSystem:
             'encrypt_time': time.time()
         }
         
-        # 存储
+        # Storage
         self.encrypted_datasets[owner_id] = C_m
         self.access_policies[owner_id] = access_policy
         
-        print(f"      Encrypt完成")
-        print(f"      生成 {n_p} 个策略组件")
-        print(f"      加密 {n_m} 条数据记录")
+        print(f"      Encrypt completed")
+        print(f"      Generate {n_p} policy components")
+        print(f"      Encrypt {n_m} data records")
         
         return C_m, sk_h_s
     
     def _symmetric_pairing_sim(self, a, b, gamma):
-        """对称配对模拟：e(a,b)^γ"""
         try:
             e_gg_gamma = self.bp.exponentiate_gt(self.crs['e_gg'], gamma)
             return e_gg_gamma
@@ -458,7 +433,7 @@ class DeCartSystem:
             return self.bp.exponentiate_gt(self.bp.pairing(self.bp.g1, self.bp.g2), gamma)
     
     def _compute_c4_i(self, u_id_prime, gamma, beta):
-        """计算 c4,i = e(h_{u_id'}, h_{u_id'})^γ · β"""
+        """Compute c4,i = e(h_{u_id'}, h_{u_id'})^γ · β"""
         try:
             z_u = self.crs['z_values'][u_id_prime]
             z_u_sq = (z_u * z_u) % self.ff.p
@@ -478,7 +453,7 @@ class DeCartSystem:
             }
     
     def _compute_c5(self, beta, pk_h, sk_h_u):
-        """计算 c5 = H[e(g,g)^β] ⊕ (pk_h || sk_h,u)"""
+        """Compute c5 = H[e(g,g)^β] ⊕ (pk_h || sk_h,u)"""
         e_gg_beta = self.bp.exponentiate_gt(self.crs['e_gg'], beta)
         hash_bytes = self.crs['H'](e_gg_beta)
         
@@ -492,35 +467,35 @@ class DeCartSystem:
         xor_len = min(len(hash_bytes), len(combined))
         return bytes([hash_bytes[i] ^ combined[i] for i in range(xor_len)])
     
-    # ========== Check 算法 ==========
+    #  Check algorithm 
     
     def check(self, querier_id: int, sk_id: int, C_m: Dict) -> Optional[Dict]:
         """
         Check(u_id, sk_id, C_m) → C_M
-        完善数学验证，添加撤销检查
+        Enhanced mathematical validation with revocation checks
         """
-        print(f"\n[Check] 查询者 {querier_id} 检查访问权限...")
+        print(f"\n[Check] querytranslated {querier_id} checking access permission...")
         
-        # ===== 新增：检查查询者是否已被撤销 =====
+        # checkquerytranslatedrevocation
         if self.is_revoked(querier_id):
-            print(f"      用户 {querier_id} 已被撤销，无权访问")
+            print(f"      User {querier_id} translatedrevocation, has no access")
             return None
         
-        # 1. 检查访问权限
+        # 1. checking access permission
         if querier_id not in C_m['P']:
-            print(f"      不在访问策略中")
+            print(f"      translatedaccess policytranslated")
             return None
         
         j = C_m['P'].index(querier_id)
         u_id_prime = querier_id % self.params.n
         
-        # 2. 获取辅助参数
+        # 2. GettranslatedParameters
         L_id = self.aux[querier_id]
         if not L_id:
-            print(f"       辅助参数为空")
+            print(f"       auxiliary parameters are empty")
             return None
         
-        # 3. 查找有效的 O_{id,i}
+        # 3. Find valid O_{id,i}
         O_found = None
         o_index = -1
         
@@ -531,12 +506,12 @@ class DeCartSystem:
                 break
         
         if O_found is None:
-            print(f"      未找到有效的O元素")
+            print(f"      No valid O element found")
             return None
         
-        print(f"      找到有效的O元素 (索引 {o_index})")
+        print(f"      Found valid O element (index {o_index})")
         
-        # 4. 恢复同态密钥
+        # 4. Recover homomorphic key
         beta = C_m.get('beta', 0)
         c5 = C_m['c5']
         e_gg_beta = self.bp.exponentiate_gt(self.crs['e_gg'], beta)
@@ -549,7 +524,7 @@ class DeCartSystem:
         else:
             pk_h_bytes, sk_h_u_bytes = b'', b''
         
-        # 5. 准备C_M（等待后续加密AI模型）
+        # 5. Prepare C_M
         C_M = {
             'querier_id': querier_id,
             'pk_h_recovered': len(pk_h_bytes) > 10,
@@ -560,27 +535,25 @@ class DeCartSystem:
             'check_time': time.time()
         }
         
-        print(f"      Check完成")
-        print(f"      权限验证通过，等待AI模型加密")
+        print(f"      Check completed")
+        print(f"      Access verification passed; waiting for AI model encryption")
         
         return C_M
     
-    # ========== AI模型加密方法 ==========
+    #  AItranslatedencrypttranslated 
     
     def encrypt_decision_tree(self, tree_model, pk_h: Any) -> Dict:
         """
-        加密决策树 - Algorithm 1
+        Parameters:
+            tree_model: sklearndecision treetranslatedDecisionTreeHEtranslated
+            pk_h: translatedencrypttranslated
         
-        参数:
-            tree_model: sklearn决策树或DecisionTreeHE对象
-            pk_h: 同态加密公钥
-        
-        返回:
-            加密的决策树参数字典
+        translated:
+            encrypttranslateddecision treeParameterstranslated
         """
-        print(f"\n[Encrypt Decision Tree] 加密决策树模型")
+        print(f"\n[Encrypt Decision Tree] encryptdecision treetranslated")
 
-        # 转换为DecisionTreeHE
+        # translatedDecisionTreeHE
         if isinstance(tree_model, DecisionTreeHE):
             tree = tree_model
         elif isinstance(tree_model, dict) and tree_model.get('type') == 'decision_tree':
@@ -601,27 +574,27 @@ class DeCartSystem:
         else:
             tree = DecisionTreeHE.from_sklearn(tree_model)
         
-        # 获取可加密参数
+        # GettranslatedencryptParameters
         params = tree.get_encryptable_params()
         
-        # 加密内部节点
+        # encryptinternal nodes
         encrypted_internal = []
         for node in params['internal_nodes']:
             encrypted_node = {
                 'node_id': node['node_id'],
-                'feature_idx': node['feature_idx'],  # 特征索引可以明文存储
-                'threshold': self.he.encrypt([node['threshold']]),  # 加密阈值
+                'feature_idx': node['feature_idx'],  # translatedindextranslatedStorage
+                'threshold': self.he.encrypt([node['threshold']]),  # encrypttranslated
                 'left': node['left'],
                 'right': node['right']
             }
             encrypted_internal.append(encrypted_node)
         
-        # 加密叶子节点
+        # encryptleaf nodes
         encrypted_leaves = []
         for node in params['leaf_nodes']:
             encrypted_node = {
                 'node_id': node['node_id'],
-                'value': self.he.encrypt([node['value']])  # 加密输出值
+                'value': self.he.encrypt([node['value']])  # encrypttranslated
             }
             encrypted_leaves.append(encrypted_node)
         
@@ -633,19 +606,17 @@ class DeCartSystem:
             'node_count': params['node_count']
         }
         
-        print(f"      决策树加密完成")
-        print(f"      内部节点: {len(encrypted_internal)}")
-        print(f"      叶子节点: {len(encrypted_leaves)}")
+        print(f"      decision treeencrypttranslated")
+        print(f"      internal nodes: {len(encrypted_internal)}")
+        print(f"      leaf nodes: {len(encrypted_leaves)}")
         
         return encrypted_tree
     
-        # ========== 替换原有的 encrypt_neural_network 方法 ==========
+
     def encrypt_neural_network(self, nn_model=None, pk_h: Any = None) -> Dict:
         """
-        加密神经网络 - 兼容旧单层格式和新两层格式。
+        encryptneural network .
         """
-        print(f"\n[Encrypt Neural Network] 加密神经网络")
-
         if pk_h is None:
             pk_h = self.he.public_key
 
@@ -665,44 +636,44 @@ class DeCartSystem:
                 params_list = [nn_model]
         else:
             if not hasattr(nn_model, 'get_encryptable_params'):
-                print(f"   警告: 转换输入为默认神经网络")
+                print(f"   Warning: translatedneural network")
                 nn_model = self.create_default_neural_network()
             try:
                 params_list = nn_model.get_encryptable_params()
             except AttributeError:
-                print(f"   错误: 模型没有 get_encryptable_params 方法")
+                print(f"   Error: translated get_encryptable_params translated")
                 return {
                     'type': 'neural_network',
                     'layers': [],
                     'layer_count': 0
                 }
         
-        # 加密每一层
+        # encrypttranslated
         encrypted_layers = []
         for params in params_list:
             weights_flat = params.get('weights', [])
             bias_flat = params.get('bias', [])
             
-            print(f"   加密层 {params.get('layer_idx', 0)}: {params.get('weights_shape', 'unknown')}")
+            print(f"   encrypttranslated {params.get('layer_idx', 0)}: {params.get('weights_shape', 'unknown')}")
             
-            # 加密权重
+            # encrypttranslated
             encrypted_weights = []
             for w in weights_flat:
                 try:
                     encrypted_w = self.he.encrypt([float(w)])
                     encrypted_weights.append(encrypted_w)
                 except Exception as e:
-                    print(f"     警告: 权重加密失败: {e}")
+                    print(f"     Warning: translatedencryptFAILED: {e}")
                     encrypted_weights.append(None)
             
-            # 加密偏置
+            # encrypttranslated
             encrypted_bias = []
             for b in bias_flat:
                 try:
                     encrypted_b = self.he.encrypt([float(b)])
                     encrypted_bias.append(encrypted_b)
                 except Exception as e:
-                    print(f"     警告: 偏置加密失败: {e}")
+                    print(f"     Warning: translatedencryptFAILED: {e}")
                     encrypted_bias.append(None)
             
             encrypted_layer = {
@@ -722,39 +693,39 @@ class DeCartSystem:
             'layer_count': len(encrypted_layers)
         }
         
-        print(f"      神经网络加密完成")
+        print(f"      neural networkencrypttranslated")
         return encrypted_nn
 
 
     def encrypt_model(self, model_wrapper: EncryptedModelWrapper, pk_h: Any) -> Dict:
         """
-        统一模型加密入口
+        translatedencrypttranslated
         
-        参数:
-            model_wrapper: 模型包装器
-            pk_h: 同态加密公钥
+        Parameters:
+            model_wrapper: translated
+            pk_h: translatedencrypttranslated
         
-        返回:
-            加密的模型参数字典
+        translated:
+            encrypttranslatedParameterstranslated
         """
         if model_wrapper.model_type == 'decision_tree':
             return self.encrypt_decision_tree(model_wrapper.plain_model, pk_h)
         elif model_wrapper.model_type == 'neural_network':
             return self.encrypt_neural_network(model_wrapper.plain_model, pk_h)
         else:
-            raise ValueError(f"未知模型类型: {model_wrapper.model_type}")
+            raise ValueError(f"translatedmodel type: {model_wrapper.model_type}")
     
-    # ========== 加密查询方法 ==========
+    #  encryptquerytranslated 
     
     def _query_decision_tree(self, 
                             encrypted_tree: Dict,
                             encrypted_data: List[Any],
                             sk_h_s: Any) -> List[Any]:
         """
-        加密决策树查询 - Algorithm 3
-        使用安全的同态操作
+        encryptdecision treequery - Algorithm 3
+        translated
         """
-        print(f"\n[Query Decision Tree] 执行加密决策树查询")
+        print(f"\n[Query Decision Tree] translatedencryptdecision treequery")
         
         results = []
         internal_map = {}
@@ -792,16 +763,16 @@ class DeCartSystem:
         
         for data_idx, encrypted_record in enumerate(encrypted_data):
             try:
-                # 从根节点开始，使用统一简单树逻辑进行遍历
+                # translated, translated
                 current_node_id = encrypted_tree['root_id']
 
-                # 解密输入记录，用第 feature_idx 个特征做阈值判断
+                # decrypttranslated, translated feature_idx translated
                 record_plain = self.he.decrypt(encrypted_record)
                 if not isinstance(record_plain, list):
                     record_plain = [float(record_plain)]
 
-                # 遍历树
-                max_depth = 10  # 防止无限循环
+                # translated
+                max_depth = 10  # translated
                 depth = 0
                 
                 while current_node_id in internal_map and depth < max_depth:
@@ -819,24 +790,24 @@ class DeCartSystem:
                     
                     depth += 1
                 
-                # 到达叶子节点
+                # translatedleaf nodes
                 if current_node_id in leaf_map:
                     pred_plain = leaf_map[current_node_id]
                     results.append(self.he.encrypt([pred_plain]))
                 else:
-                    # 如果没找到叶子，使用默认值
-                    print(f"   警告: 未找到叶子节点 {current_node_id}")
+                    # translated, translated
+                    print(f"   Warning: translatedleaf nodes {current_node_id}")
                     results.append(self.he.encrypt([0.0]))
                 
             except Exception as e:
-                print(f"   第{data_idx}条数据查询失败: {e}")
-                # 返回加密的0作为默认值
+                print(f"   translated{data_idx}translatedqueryFAILED: {e}")
+                # translatedencrypttranslated0translated
                 try:
                     results.append(self.he.encrypt([0.0]))
                 except:
                     results.append(None)
         
-        print(f"      决策树查询完成，生成 {len(results)} 个结果")
+        print(f"      decision treequerytranslated, Generate {len(results)} translated")
         return results
     
     @staticmethod
@@ -845,21 +816,21 @@ class DeCartSystem:
             return [float(v) for v in values]
         return [float(ActivationFunctions.get_he_friendly(activation, float(v))) for v in values]
 
-    # ========== 新增：神经网络查询方法 ==========
+    # neural networkquerytranslated
     def _query_single_layer_nn(self,
                               encrypted_nn: Dict,
                               encrypted_data: List[Any],
                               sk_h_s: Any) -> List[Any]:
         """
-        神经网络查询 - 兼容旧单层和新两层格式。
+        neural networkquery
         """
-        print(f"\n[Query Neural Network] 执行加密查询")
+        print(f"\n[Query Neural Network] translatedencryptquery")
 
         results = []
         progress_interval = 10 if len(encrypted_data) <= 1000 else 100
 
         if not encrypted_nn.get('layers'):
-            print(f"   警告: 神经网络没有层")
+            print(f"   Warning: neural networktranslated")
             for _ in encrypted_data:
                 try:
                     results.append(self.he.encrypt([0.0]))
@@ -964,57 +935,54 @@ class DeCartSystem:
                 result = self.he.encrypt(outputs_plain if outputs_plain else [0.0])
                 results.append(result)
                 if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
-                    print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
+                    print(f"      neural networkqueryprogress: {data_idx + 1}/{len(encrypted_data)}")
 
             except Exception as e:
-                print(f"   第{data_idx}条数据查询失败: {e}")
+                print(f"   translated{data_idx}translatedqueryFAILED: {e}")
                 try:
                     results.append(self.he.encrypt([0.0 for _ in range(max(1, fallback_dim))]))
                 except Exception:
                     results.append(None)
                 if (data_idx + 1) % progress_interval == 0 or (data_idx + 1) == len(encrypted_data):
-                    print(f"      神经网络查询进度: {data_idx + 1}/{len(encrypted_data)}")
+                    print(f"      neural networkqueryprogress: {data_idx + 1}/{len(encrypted_data)}")
 
-        print(f"      神经网络查询完成，生成 {len(results)} 个结果")
+        print(f"      neural networkquerytranslated, Generate {len(results)} translated")
         return results
             
-    # ========== Query 算法 ==========
+    #  Query algorithm 
     def query(self, C_M: Dict, C_m: Dict, sk_h_s: Any) -> Dict:
-        """
-        Query(C_M, C_m) → ER
-        支持点积、决策树和浅层神经网络查询
-        """
-        print(f"\n[Query] 执行加密AI查询...")
+
+        print(f"\n[Query] translatedencryptAIquery...")
         
         if not C_M.get('access_granted', False):
-            raise ValueError("没有访问权限")
+            raise ValueError("translatedaccess permission")
         
         if 'encrypted_model' not in C_M:
-            raise ValueError("缺少加密的AI模型")
+            raise ValueError("translatedencrypttranslatedAItranslated")
         
         encrypted_model = C_M['encrypted_model']
         encrypted_data_list = C_m['c6_i']
         
-        # 判断模型类型
+        # translatedmodel type
         if isinstance(encrypted_model, dict):
             model_type = encrypted_model.get('type', 'unknown')
         else:
             model_type = 'dot_product'
         
         if model_type == 'decision_tree':
-            print(f"   模型类型: 决策树")
+            print(f"   model type: decision tree")
             encrypted_results = self._query_decision_tree(
                 encrypted_model, encrypted_data_list, sk_h_s
             )
         elif model_type == 'neural_network':
-            print(f"   模型类型: 神经网络 (单层)")
-            # ===== 修改这里：统一使用单层网络查询 =====
+            print(f"   model type: neural network (translated)")
+
             encrypted_results = self._query_single_layer_nn(
                 encrypted_model, encrypted_data_list, sk_h_s
             )
         else:
-            # 点积模型
-            print(f"   模型类型: 点积")
+            # dot producttranslated
+            print(f"   model type: dot product")
             encrypted_results = []
             failed_count = 0
             progress_interval = 10 if len(encrypted_data_list) <= 1000 else 100
@@ -1024,7 +992,7 @@ class DeCartSystem:
                     result = encrypted_data.dot(encrypted_model)
                     encrypted_results.append(result)
                     if (i + 1) % progress_interval == 0 or (i + 1) == len(encrypted_data_list):
-                        print(f"   点积查询进度: {i + 1}/{len(encrypted_data_list)}")
+                        print(f"   dot productqueryprogress: {i + 1}/{len(encrypted_data_list)}")
                 except Exception as e:
                     failed_count += 1
                     try:
@@ -1033,7 +1001,7 @@ class DeCartSystem:
                         result = None
                     encrypted_results.append(result)
                     if (i + 1) % progress_interval == 0 or (i + 1) == len(encrypted_data_list):
-                        print(f"   点积查询进度: {i + 1}/{len(encrypted_data_list)}")
+                        print(f"   dot productqueryprogress: {i + 1}/{len(encrypted_data_list)}")
         
         ER = {
             'encrypted_results': encrypted_results,
@@ -1044,18 +1012,18 @@ class DeCartSystem:
             'query_time': time.time()
         }
         
-        print(f"      Query完成")
-        print(f"      生成 {len(encrypted_results)} 个加密结果")
+        print(f"      Querytranslated")
+        print(f"      Generate {len(encrypted_results)} translatedencrypttranslated")
         
         return ER
 
-    # ========== Decrypt 算法 ==========
+    #  Decrypt algorithm 
     
     def decrypt(self, sk_h_u: Any, ER: Dict) -> List[float]:
         """
         Decrypt(sk_h,u, ER) → R
         """
-        print(f"\n[Decrypt] 解密查询结果...")
+        print(f"\n[Decrypt] decryptquerytranslated...")
         
         decrypted_results = []
         failed_count = 0
@@ -1067,7 +1035,7 @@ class DeCartSystem:
                 decrypted_results.append(0.0)
                 failed_count += 1
                 if (i + 1) % progress_interval == 0 or (i + 1) == total_results:
-                    print(f"      解密进度: {i + 1}/{total_results}")
+                    print(f"      decryptprogress: {i + 1}/{total_results}")
                 continue
                 
             try:
@@ -1080,71 +1048,71 @@ class DeCartSystem:
                 else:
                     decrypted_results.append(float(decrypted))
             except Exception as e:
-                print(f"   第{i}个结果解密失败: {e}")
+                print(f"   translated{i}translateddecryptFAILED: {e}")
                 decrypted_results.append(0.0)
                 failed_count += 1
             if (i + 1) % progress_interval == 0 or (i + 1) == total_results:
-                print(f"      解密进度: {i + 1}/{total_results}")
+                print(f"      decryptprogress: {i + 1}/{total_results}")
         
-        print(f"      Decrypt完成")
-        print(f"      获得 {len(decrypted_results)} 个解密值")
+        print(f"      Decrypttranslated")
+        print(f"      translated {len(decrypted_results)} translateddecrypttranslated")
         if failed_count > 0:
-            print(f"         其中 {failed_count} 个解密失败")
-        print(f"      结果示例: {decrypted_results[:5]}")
+            print(f"         translated {failed_count} translateddecryptFAILED")
+        print(f"      Result sample: {decrypted_results[:5]}")
         
         return decrypted_results
     
-    # ========== Update 算法 ==========
+    #  Update algorithm 
     
     def update(self, user_id: int) -> List:
         """
         Update(u_id) → L_id
         """
         if user_id >= len(self.aux):
-            raise ValueError(f"用户ID {user_id} 超出范围")
+            raise ValueError(f"User ID {user_id} translated")
         return self.aux[user_id]
     
-    # ========== Revoke 算法 ==========
+    #  Revoke algorithm 
     
     def revoke(self, user_id: int, pp: List, aux: List) -> Tuple[List, List]:
         """
         Revoke(u_id, pp, aux) → (pp', aux')
-        论文第V-B节算法实现
+        translatedV-Btranslatedalgorithmtranslated
         """
         print(f"\n{'='*60}")
-        print(f"[Revoke] 撤销用户 {user_id}")
+        print(f"[Revoke] revocationUser {user_id}")
         print(f"{'='*60}")
         
-        # 1. 验证用户是否存在
+        # 1. validateUsertranslated
         if user_id not in self.registered_users:
-            raise ValueError(f"用户 {user_id} 未注册，无法撤销")
+            raise ValueError(f"User {user_id} translatedregistering, translatedrevocation")
         
         if user_id not in self.user_secrets:
-            raise ValueError(f"用户 {user_id} 未执行KeyGen")
+            raise ValueError(f"User {user_id} has not executed KeyGen")
         
-        # 2. 检查是否已撤销
+        # 2. checktranslatedrevocation
         if self.is_revoked(user_id):
-            print(f"   用户 {user_id} 已被撤销，跳过")
+            print(f"   User {user_id} translatedrevocation")
             return pp, aux
         
-        # 3. 生成撤销因子 r_id ∈ Z_p
+        # 3. generateRevocation factor r_id ∈ Z_p
         r_id = self.ff.random_nonzero()
-        print(f"   生成撤销因子: r_id = {hex(r_id)[:20]}...")
+        print(f"   generateRevocation factor: r_id = {hex(r_id)[:20]}...")
         
-        # 4. 获取用户信息
+        # 4. GetUsertranslated
         user_info = self.user_secrets[user_id]
         u_id_prime = user_info['u_id_prime']
         u_id_prime_1based = user_info['u_id_prime_1based']
         block_num = user_info['block']
         
-        print(f"   用户信息: u_id'={u_id_prime_1based} (1-based), 块={block_num}")
+        print(f"   Usertranslated: u_id'={u_id_prime_1based} (1-based), block={block_num}")
         
-        # 5. 生成撤销公钥 pk_r,id = h_{u_id'}^{r_id}
+        # 5. generaterevocationtranslated pk_r,id = h_{u_id'}^{r_id}
         h_u = self.crs['h_i'][u_id_prime]
         pk_r = self.bp.exponentiate_g1(h_u, r_id)
-        print(f"   生成撤销公钥: pk_r = h_{u_id_prime_1based}^{r_id}")
+        print(f"   generaterevocationtranslated: pk_r = h_{u_id_prime_1based}^{r_id}")
         
-        # 6. 生成撤销个人辅助参数 pap_r,id
+        # 6. generaterevocationtranslatedParameters pap_r,id
         pap_r = []
         
         for i in range(self.params.n):
@@ -1154,7 +1122,7 @@ class DeCartSystem:
                 pap_r.append(None)
                 continue
             
-            # 获取 H_{i,u_id'} 或 H_{u_id',i}
+            # Get H_{i,u_id'} translated H_{u_id',i}
             if (i, u_id_prime) in self.crs['H_ij']:
                 H_key = (i, u_id_prime)
             else:
@@ -1162,14 +1130,14 @@ class DeCartSystem:
             
             H_val = self.crs['H_ij'][H_key]
             
-            # 计算 H_{i,u_id'}^{r_id}
+            # compute H_{i,u_id'}^{r_id}
             pap_element = self.bp.exponentiate_gt(H_val, r_id)
             pap_r.append(pap_element)
         
         non_empty = len([p for p in pap_r if p is not None])
-        print(f"   生成撤销pap: {non_empty} 个非空元素")
+        print(f"   generaterevocationpap: {non_empty} non-empty elements")
         
-        # 7. 保存撤销信息
+        # 7. translatedRevocation info
         self._revoked_users.add(user_id)
         self._revoked_info[user_id] = {
             'r_id': r_id,
@@ -1181,15 +1149,15 @@ class DeCartSystem:
         }
         self._revocation_factors[user_id] = r_id
         
-        # 8. 更新公共参数和辅助参数
+        # 8. Update public parameterstranslatedParameters
         pp_new = pp.copy()
         aux_new = [list(L) for L in aux]
         
         k = math.ceil((user_id + 1) / self.params.n) - 1
         pp_new[k] = pk_r
-        print(f"   更新块 {k} 公共参数")
+        print(f"   Update block {k} translatedParameters")
         
-        # 更新辅助参数 - 为同块其他用户添加撤销pap
+        # Update auxiliary parameters - translatedblocktranslatedUsertranslatedrevocationpap
         block_start = k * self.params.n
         block_end = min(block_start + self.params.n, self.params.N)
         
@@ -1199,27 +1167,23 @@ class DeCartSystem:
                 aux_new[j].append(copy.deepcopy(pap_r))
                 updated_count += 1
         
-        print(f"   更新辅助参数: {updated_count} 个用户")
+        print(f"   Update auxiliary parameters: {updated_count} users")
         
-        # 9. 从注册用户中移除
+        # 9. translatedregisteringUsertranslated
         if user_id in self.registered_users:
             del self.registered_users[user_id]
         
-        # 10. 通知受影响的所有者
+        # 10. translated
         affected_owners = self._notify_owners_about_revoke(user_id)
         if affected_owners:
-            print(f"   已标记 {len(affected_owners)} 个受影响的所有者")
+            print(f"   translated {len(affected_owners)} translated")
         
-        print(f"\n   Revoke完成")
-        print(f"   用户 {user_id} 已被撤销")
+        print(f"\n   Revoketranslated")
+        print(f"   User {user_id} translatedrevocation")
         
         return pp_new, aux_new
     
     def _notify_owners_about_revoke(self, revoked_user_id: int) -> List[int]:
-        """
-        内部方法：通知受影响的数据所有者
-        返回需要更新策略的所有者ID列表
-        """
         affected = []
         for owner_id, policy in self.access_policies.items():
             if revoked_user_id in policy:
@@ -1227,53 +1191,49 @@ class DeCartSystem:
         return affected
     
     def is_revoked(self, user_id: int) -> bool:
-        """检查用户是否已被撤销"""
+        """Check whether the user has been revoked"""
         return user_id in self._revoked_users
     
     def get_revocation_info(self, user_id: int) -> Dict:
-        """获取用户撤销信息"""
+        """GetUserRevocation info"""
         return self._revoked_info.get(user_id, {})
     
     def get_revocation_factor(self, user_id: int) -> Optional[int]:
-        """获取用户的撤销因子"""
+        """GetUsertranslatedRevocation factor"""
         return self._revocation_factors.get(user_id)
     
     def get_all_revoked_users(self) -> List[int]:
-        """获取所有已撤销用户列表"""
+        """GettranslatedrevocationUsertranslated"""
         return list(self._revoked_users)
     
     def get_affected_owners(self, revoked_user_id: int) -> List[int]:
-        """获取受撤销影响的所有者列表"""
+        """Gettranslatedrevocationtranslated"""
         return self._notify_owners_about_revoke(revoked_user_id)
     
-    # ========== 策略更新 ==========
+    #  policyupdate 
     
     def update_policy_after_revoke(self, C_m: Dict, revoked_user_id: int) -> Dict:
-        """
-        数据所有者更新策略相关参数
-        论文: "data owners can choose to update the policy-related parameters"
-        """
-        print(f"\n[Policy Update] 更新策略，移除用户 {revoked_user_id}")
+        print(f"\n[Policy Update] updatepolicy, translatedUser {revoked_user_id}")
         
         if revoked_user_id not in C_m['P']:
-            print(f"   用户 {revoked_user_id} 不在策略中，无需更新")
+            print(f"   User {revoked_user_id} translatedpolicytranslated, translatedupdate")
             return C_m
         
-        # 创建新策略（移除被撤销用户）
+        # translatedpolicy(translatedrevocationUser)
         new_policy = [uid for uid in C_m['P'] if uid != revoked_user_id]
         
         if not new_policy:
-            print(f"      警告: 新策略为空")
+            print(f"      Warning: translatedpolicytranslated")
             return C_m
         
-        print(f"   原策略: {C_m['P']}")
-        print(f"   新策略: {new_policy}")
+        print(f"   translatedpolicy: {C_m['P']}")
+        print(f"   translatedpolicy: {new_policy}")
         
-        # 重新生成随机值
+        # translatedgenerateRandom values
         beta_new = self.ff.random_element()
         gamma_new = self.ff.random_element()
         
-        # 重新计算密文组件
+        # translatedCompute ciphertext components
         c1_new, c2_new, c4_new = [], [], []
         
         for u_id in new_policy:
@@ -1283,19 +1243,19 @@ class DeCartSystem:
             
             u_id_prime = u_id % self.params.n
             
-            # 重新计算c2
+            # translatedcomputec2
             h_u = self.crs['h_i'][u_id_prime]
             pairing_val = self._symmetric_pairing_sim(c1_i, h_u, gamma_new)
             c2_new.append(pairing_val)
             
-            # 重新计算c4
+            # translatedcomputec4
             z_u = self.crs['z_values'][u_id_prime]
             z_u_sq = (z_u * z_u) % self.ff.p
             exponent = (z_u_sq * gamma_new) % self.ff.p
             gt_part = self.bp.exponentiate_gt(self.crs['e_gg'], exponent)
             c4_new.append((gt_part, beta_new))
         
-        # 更新密文
+        # updatetranslated
         C_m_new = C_m.copy()
         C_m_new['P'] = new_policy
         C_m_new['c1_i'] = c1_new
@@ -1308,19 +1268,19 @@ class DeCartSystem:
         C_m_new['revoked_user'] = revoked_user_id
         C_m_new['update_time'] = time.time()
         
-        print(f"      策略更新完成")
-        print(f"      新策略包含 {len(new_policy)} 个用户")
+        print(f"      policyupdatetranslated")
+        print(f"      translatedpolicytranslated {len(new_policy)} users")
         
         return C_m_new
     
-    # ========== 辅助方法 ==========
+    #  translated 
     
     def _create_demo_ai_model(self) -> List[float]:
-        """创建演示用AI模型"""
+        """translatedAItranslated"""
         return [0.2, 0.3, 0.1, 0.4, 0.25]
     
     def get_system_state(self) -> Dict:
-        """获取系统状态"""
+        """GetSystem state"""
         return {
             'crs_initialized': self.crs is not None,
             'pp_len': len(self.pp) if self.pp else 0,
@@ -1332,11 +1292,11 @@ class DeCartSystem:
             'revoked_users_list': list(self._revoked_users)
         }
 
-    # ========== 测试方法 ==========
+    #  Testtranslated 
     def test_ai_model_encryption(self):
-        """测试AI模型加密功能"""
+        """TestAItranslatedencrypttranslated"""
         print("\n" + "="*60)
-        print("测试 AI 模型加密功能")
+        print("Test AI translatedencrypttranslated")
         print("="*60)
         
         tree = DecisionTreeHE()
@@ -1356,40 +1316,33 @@ class DeCartSystem:
         tree.add_node(right)
         tree.set_root(0)
         
-        # 加密决策树
+        # encryptdecision tree
         pk_h = self.he.public_key
         encrypted_tree = self.encrypt_decision_tree(tree, pk_h)
         
         assert encrypted_tree['type'] == 'decision_tree'
         assert len(encrypted_tree['internal_nodes']) == 1
         assert len(encrypted_tree['leaf_nodes']) == 2
+
         
-        print(f"\n   决策树加密测试通过")
-        
-        # ===== 修改这里：使用新的单层网络创建方式 =====
-        print(f"\n测试神经网络加密...")
-        
-        # 使用新的单层网络创建方法
+        # translated
         nn = self.create_default_neural_network(input_dim=5, output_dim=2)
         
-        # 加密神经网络
+        # encryptneural network
         encrypted_nn = self.encrypt_neural_network(nn, pk_h)
         
         assert encrypted_nn['type'] == 'neural_network'
         assert len(encrypted_nn['layers']) == 1
         
-        print(f"   神经网络加密测试通过")
         
         return True
 
 
         
     def test_model_query(self, model_type: str, C_m: Dict, sk_h_s: Any, C_M_base: Dict) -> bool:
-        """
-        测试特定模型的查询
-        """
+
         print(f"\n{'-'*50}")
-        print(f"测试 {model_type} 模型查询")
+        print(f"Test {model_type} translatedquery")
         print(f"{'-'*50}")
         
         try:
@@ -1397,16 +1350,16 @@ class DeCartSystem:
             pk_h = self.he.public_key
             
             if model_type == 'dot':
-                # 点积模型
-                print(f"创建点积模型...")
+                # dot producttranslated
+                print(f"translateddot producttranslated...")
                 ai_model = [0.1, 0.2, 0.3, 0.4, 0.5]
                 encrypted_model = self.he.encrypt(ai_model)
                 C_M['encrypted_model'] = encrypted_model
                 C_M['model_type'] = 'dot'
                 
             elif model_type == 'decision_tree':
-                # 决策树模型
-                print(f"创建决策树模型...")
+                # decision treetranslated
+                print(f"translateddecision treetranslated...")
                 from schemes.ai_model import DecisionTreeHE, DecisionTreeNode
                 
                 tree = DecisionTreeHE()
@@ -1432,48 +1385,43 @@ class DeCartSystem:
                 C_M['model_type'] = 'decision_tree'
                 
             elif model_type == 'neural_network':
-                # ===== 修改这里：使用默认的单层网络 =====
-                print(f"创建单层神经网络模型...")
-                # 直接使用默认的单层网络（不传参）
+
                 encrypted_model = self.encrypt_neural_network()
                 C_M['encrypted_model'] = encrypted_model
                 C_M['model_type'] = 'neural_network'
             
             else:
-                print(f"   未知模型类型: {model_type}")
+                print(f"   translatedmodel type: {model_type}")
                 return False
             
-            # 执行查询
-            print(f"执行加密查询...")
+            # translatedquery
+            print(f"translatedencryptquery...")
             ER = self.query(C_M, C_m, sk_h_s)
             
-            # 解密结果
-            print(f"解密结果...")
+            # decrypttranslated
+            print(f"decrypttranslated...")
             results = self.decrypt(C_M['sk_h_u'], ER)
             
-            print(f"   {model_type} 模型查询成功")
-            print(f"   结果数量: {len(results)}")
-            print(f"   结果示例: {results[:5]}")
+            print(f"   {model_type} translatedquerytranslated")
+            print(f"   Result count: {len(results)}")
+            print(f"   Result sample: {results[:5]}")
             
             return True
             
         except Exception as e:
-            print(f"   {model_type} 模型查询失败: {e}")
+            print(f"   {model_type} translatedqueryFAILED: {e}")
             import traceback
             traceback.print_exc()
             return False  
   
     def test_complete_workflow(self):
-        """完整工作流测试 - 测试所有模型类型"""
-        print("\n" + "=" * 70)
-        print("DeCart 完整工作流测试 - 多模型测试")
-        print("=" * 70)
+
         
         try:
-            # 1. 系统初始化
+            # 1. System initialization
             self.setup()
             
-            # 2. 创建并注册用户
+            # 2. translatedregisteringUser
             user_ids = [0, 1, 2]
             user_keys = {}
             
@@ -1482,84 +1430,80 @@ class DeCartSystem:
                 user_keys[uid] = (sk, pk, pap)
                 self.register(uid, pk, pap)
             
-            print(f"\n   用户注册完成: {user_ids}")
+            print(f"\n   Userregisteringtranslated: {user_ids}")
             
-            # 3. 数据所有者加密数据
+            # 3. translatedencrypting data
             owner_id = 0
             access_policy = [0, 1, 2]
             data_records = [
                 [1.0, 2.0, 3.0, 4.0, 5.0],
                 [2.0, 3.0, 4.0, 5.0, 6.0],
                 [3.0, 4.0, 5.0, 6.0, 7.0],
-                [4.0, 5.0, 6.0, 7.0, 8.0],  # 添加更多测试数据
+                [4.0, 5.0, 6.0, 7.0, 8.0],  # translatedTesttranslated
                 [5.0, 6.0, 7.0, 8.0, 9.0]
             ]
             
             C_m, sk_h_s = self.encrypt(owner_id, access_policy, data_records)
-            print(f"\n   数据加密完成: {len(data_records)} 条记录")
+            print(f"\n   translatedencrypttranslated: {len(data_records)} records")
             
-            # 4. 查询者检查权限
+            # 4. querytranslatedchecktranslated
             querier_id = 1
             querier_sk = user_keys[querier_id][0]
             
             C_M_base = self.check(querier_id, querier_sk, C_m)
             if C_M_base is None:
-                print("   访问检查失败")
+                print("   translatedcheckFAILED")
                 return False
             
-            print(f"\n   权限验证通过")
+            print(f"\n   Access verification passed")
             
-            # 5. 测试所有模型类型
+            # 5. Testtranslatedmodel type
             print("\n" + "="*70)
-            print("开始测试所有模型类型")
+            print("translatedTesttranslatedmodel type")
             print("="*70)
             
             results = {}
             
-            # 测试点积模型
+            # Testdot producttranslated
             results['dot'] = self.test_model_query('dot', C_m, sk_h_s, C_M_base)
             
-            # 测试决策树模型
+            # Testdecision treetranslated
             results['decision_tree'] = self.test_model_query('decision_tree', C_m, sk_h_s, C_M_base)
             
-            # 测试神经网络模型
+            # Testneural networktranslated
             results['neural_network'] = self.test_model_query('neural_network', C_m, sk_h_s, C_M_base)
             
-            # 6. 汇总结果
+            # 6. translated
             print("\n" + "="*70)
-            print("  测试结果汇总")
+            print("  Testtranslated")
             print("="*70)
             
             all_passed = True
             for model_type, passed in results.items():
-                status = "   通过" if passed else "   失败"
+                status = "   PASSED" if passed else "   FAILED"
                 print(f"   {status} - {model_type}")
                 all_passed = all_passed and passed
             
             if all_passed:
-                print("\n   所有模型测试通过！")
-                print("   支持: 点积模型、决策树、神经网络")
+                print("\n   translatedTestPASSED！")
             else:
-                print("\n   部分模型测试失败")
+                print("\n   translatedTestFAILED")
             
             print("\n" + "="*70)
             return all_passed
             
         except Exception as e:
-            print(f"\n   测试失败: {e}")
+            print(f"\n   TestFAILED: {e}")
             import traceback
             traceback.print_exc()
             return False    
     
     def test_revoke_functionality(self):
-        """专门测试Revoke功能"""
-        print("\n" + "="*80)
-        print("  测试 DeCart Revoke 功能")
-        print("="*80)
+
         
         try:
-            # 重置系统状态，确保测试独立
-            print("\n0. 重置系统状态...")
+            # translatedSystem state
+            print("\n0. translatedSystem state...")
             self.crs = None
             self.pp = None
             self.aux = None
@@ -1571,65 +1515,65 @@ class DeCartSystem:
             self._revoked_info = {}
             self._revocation_factors = {}
         
-            # 1. 初始化系统
-            print("\n1. 系统初始化...")
+            # 1. translated
+            print("\n1. System initialization...")
             self.setup()
             
-            # 2. 创建并注册用户
-            print("\n2. 创建用户...")
+            # 2. translatedregisteringUser
+            print("\n2. translatedUser...")
             users = [5, 6, 7]
             for uid in users:
                 sk, pk, pap = self.keygen(uid)
                 self.register(uid, pk, pap)
-                print(f"   用户 {uid} 注册成功")
+                print(f"   User {uid} registeringtranslated")
             
-            # 3. 检查初始状态
-            print("\n3. 初始状态:")
-            print(f"   注册用户数: {len(self.registered_users)}")
-            print(f"   撤销用户数: {len(self._revoked_users)}")
-            assert len(self.registered_users) == 3, f"注册用户数应为3，实际为{len(self.registered_users)}"
-            assert len(self._revoked_users) == 0, f"撤销用户数应为0，实际为{len(self._revoked_users)}"
+            # 3. checktranslated
+            print("\n3. translated:")
+            print(f"   registeringUsertranslated: {len(self.registered_users)}")
+            print(f"   revocationUsertranslated: {len(self._revoked_users)}")
+            assert len(self.registered_users) == 3, f"registeringUsertranslatedshould be3, actual{len(self.registered_users)}"
+            assert len(self._revoked_users) == 0, f"revocationUsertranslatedshould be0, actual{len(self._revoked_users)}"
             
-            # 4. 撤销用户6
-            print("\n4. 撤销用户6...")
+            # 4. revocationUser6
+            print("\n4. revocationUser6...")
             pp_new, aux_new = self.revoke(6, self.pp, self.aux)
             self.pp = pp_new
             self.aux = aux_new
             
-            # 5. 验证撤销状态
-            print("\n5. 验证撤销状态:")
+            # 5. validaterevocationtranslated
+            print("\n5. validaterevocationtranslated:")
             is_revoked_6 = self.is_revoked(6)
             is_revoked_5 = self.is_revoked(5)
-            print(f"   用户6是否撤销: {is_revoked_6}")
-            print(f"   用户5是否撤销: {is_revoked_5}")
-            assert is_revoked_6 == True, "用户6应被撤销"
-            assert is_revoked_5 == False, "用户5不应被撤销"
+            print(f"   User6translatedrevocation: {is_revoked_6}")
+            print(f"   User5translatedrevocation: {is_revoked_5}")
+            assert is_revoked_6 == True, "User6translatedrevocation"
+            assert is_revoked_5 == False, "User5translatedrevocation"
             
             info = self.get_revocation_info(6)
-            print(f"   撤销信息: {list(info.keys())}")
-            assert 'r_id' in info, "撤销信息应包含r_id"
-            assert 'pk_r' in info, "撤销信息应包含pk_r"
-            assert 'pap_r' in info, "撤销信息应包含pap_r"
+            print(f"   Revocation info: {list(info.keys())}")
+            assert 'r_id' in info, "Revocation infotranslatedr_id"
+            assert 'pk_r' in info, "Revocation infotranslatedpk_r"
+            assert 'pap_r' in info, "Revocation infotranslatedpap_r"
             
             factor = self.get_revocation_factor(6)
-            print(f"   撤销因子: {factor is not None}")
-            assert factor is not None, "撤销因子不应为None"
+            print(f"   Revocation factor: {factor is not None}")
+            assert factor is not None, "Revocation factortranslatedshould beNone"
             
             revoked_list = self.get_all_revoked_users()
-            print(f"   所有撤销用户: {revoked_list}")
-            assert 6 in revoked_list, "撤销用户列表应包含6"
+            print(f"   translatedrevocationUser: {revoked_list}")
+            assert 6 in revoked_list, "revocationUsertranslated6"
             
-            # 6. 尝试为被撤销用户生成新密钥（应失败）
-            print("\n6. 尝试为被撤销用户6生成新密钥（应失败）...")
+            # 6. translatedrevocationUsergeneratetranslated(translatedFAILED)
+            print("\n6. translatedrevocationUser6generatetranslated(translatedFAILED)...")
             try:
                 sk, pk, pap = self.keygen(6)
-                print(f"      应该失败但成功了")
-                assert False, "keygen应该拒绝被撤销用户"
+                print(f"      translatedFAILEDtranslated")
+                assert False, "keygentranslatedrevocationUser"
             except ValueError as e:
-                print(f"      正确拒绝: {e}")
+                print(f"      translated: {e}")
             
-            # 7. 尝试重新注册被撤销用户（应失败）
-            print("\n7. 尝试重新注册用户6（应失败）...")
+            # 7. translatedregisteringtranslatedrevocationUser(translatedFAILED)
+            print("\n7. translatedregisteringUser6(translatedFAILED)...")
             try:
                 x_id = self.ff.random_element()
                 u_id_prime = 6 % self.params.n
@@ -1637,13 +1581,13 @@ class DeCartSystem:
                 pk_dummy = self.bp.exponentiate_g1(h_u, x_id)
                 pap_dummy = [None] * self.params.n
                 self.register(6, pk_dummy, pap_dummy)
-                print(f"      应该失败但成功了")
-                assert False, "register应该拒绝被撤销用户"
+                print(f"      translatedFAILEDtranslated")
+                assert False, "registertranslatedrevocationUser"
             except ValueError as e:
-                print(f"      正确拒绝: {e}")
+                print(f"      translated: {e}")
             
-            # 8. 测试策略更新
-            print("\n8. 测试策略更新...")
+            # 8. Testpolicyupdate
+            print("\n8. Testpolicyupdate...")
             dummy_C_m = {
                 'P': [5, 6, 7],
                 'c1_i': [None, None, None],
@@ -1656,13 +1600,13 @@ class DeCartSystem:
             }
             
             updated = self.update_policy_after_revoke(dummy_C_m, 6)
-            print(f"   新策略: {updated['P']}")
-            print(f"   是否包含用户6: {6 in updated['P']}")
-            assert 6 not in updated['P'], "新策略不应包含被撤销用户"
-            assert updated['n_p'] == 2, f"新策略长度应为2，实际为{updated['n_p']}"
+            print(f"   translatedpolicy: {updated['P']}")
+            print(f"   translatedUser6: {6 in updated['P']}")
+            assert 6 not in updated['P'], "translatedpolicytranslatedrevocationUser"
+            assert updated['n_p'] == 2, f"translatedpolicytranslatedshould be2, actual{updated['n_p']}"
             
-            # 9. 测试check时检查撤销状态
-            print("\n9. 测试被撤销用户的访问检查...")
+            # 9. Testchecktranslatedcheckrevocationtranslated
+            print("\n9. TesttranslatedrevocationUsertranslatedcheck...")
             dummy_C_m_with_policy = {
                 'P': [5, 6, 7],
                 'c1_i': [None, None, None],
@@ -1674,40 +1618,40 @@ class DeCartSystem:
             }
             
             check_result = self.check(6, 123, dummy_C_m_with_policy)
-            print(f"   检查结果: {check_result is None}")
-            assert check_result is None, "被撤销用户的check应返回None"
+            print(f"   checktranslated: {check_result is None}")
+            assert check_result is None, "translatedrevocationUsertranslatedchecktranslatedNone"
             
-            # 10. 测试受影响所有者通知
-            print("\n10. 测试受影响所有者通知...")
+            # 10. Testtranslated
+            print("\n10. Testtranslated...")
             self.access_policies[5] = [5, 6, 7]
             self.access_policies[8] = [8, 9]
             
             affected = self.get_affected_owners(6)
-            print(f"   受影响的用户: {affected}")
-            assert 5 in affected, "所有者5应受影响"
-            assert 8 not in affected, "所有者8不应受影响"
+            print(f"   translatedUser: {affected}")
+            assert 5 in affected, "translated5translated"
+            assert 8 not in affected, "translated8translated"
             
-            # 11. 最终状态验证
-            print("\n11. 最终状态:")
-            print(f"   注册用户数: {len(self.registered_users)}")
-            print(f"   撤销用户数: {len(self._revoked_users)}")
-            assert len(self.registered_users) == 2, f"最终注册用户数应为2，实际为{len(self.registered_users)}"
-            assert len(self._revoked_users) == 1, f"最终撤销用户数应为1，实际为{len(self._revoked_users)}"
+            # 11. translatedvalidate
+            print("\n11. translated:")
+            print(f"   registeringUsertranslated: {len(self.registered_users)}")
+            print(f"   revocationUsertranslated: {len(self._revoked_users)}")
+            assert len(self.registered_users) == 2, f"translatedregisteringUsertranslatedshould be2, actual{len(self.registered_users)}"
+            assert len(self._revoked_users) == 1, f"translatedrevocationUsertranslatedshould be1, actual{len(self._revoked_users)}"
             
-            print(f"\n   DeCart Revoke 所有测试通过")
+            print(f"\n   DeCart Revoke translatedTestPASSED")
             return True
             
         except Exception as e:
-            print(f"\n   测试失败: {e}")
+            print(f"\n   TestFAILED: {e}")
             import traceback
             traceback.print_exc()
             return False
 
 
-# ========== 导出接口 ==========
+#  Export interface 
 
 class DeCartScheme:
-    """DeCart方案主类"""
+    """DeCarttranslatedmain class"""
     
     def __init__(self, params: Optional[DeCartParams] = None):
         self.system = DeCartSystem(params)
@@ -1761,31 +1705,25 @@ class DeCartScheme:
         return self.system.test_complete_workflow()
 
 
-# ========== 主测试 ==========
+#  translatedTest 
 
 if __name__ == "__main__":
-    print("="*80)
-    print("🔬 DeCart 完整测试套件")
-    print("="*80)
     
     system = DeCartSystem(DeCartParams(N=32, n=8))
     
-    # 先测试AI模型加密
+    # translatedTestAItranslatedencrypt
     print("\n" + "="*80)
-    print("📋 测试 AI 模型加密")
+    print("Test AI translatedencrypt")
     print("="*80)
     ai_success = system.test_ai_model_encryption()
     
-    # 再运行原有的完整工作流测试
+
     print("\n" + "="*80)
-    print("📋 运行原有测试: 完整工作流")
+    print("translatedTesttranslated")
     print("="*80)
     workflow_success = system.test_complete_workflow()
     
-    '''
-    # 再运行新增的Revoke测试
-    print("\n" + "="*80)
-    print("📋 运行新增测试: Revoke功能")
-    print("="*80)
-    revoke_success = system.test_revoke_functionality()
-    '''
+
+
+
+

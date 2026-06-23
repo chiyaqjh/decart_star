@@ -18,8 +18,6 @@ UCI_HAR_EXTRACTED_DIR = 'UCI HAR Dataset'
 
 
 class UCIHARDataLoader:
-    """Load the UCI HAR dataset from local files or the UCI archive."""
-
     def __init__(self,
                  data_dir: str = './data',
                  batch_size: int = 128,
@@ -34,9 +32,9 @@ class UCIHARDataLoader:
 
         os.makedirs(data_dir, exist_ok=True)
 
-        print(f'\n✅ UCI HAR 数据加载器初始化')
-        print(f'   数据目录: {data_dir}')
-        print(f'   批次大小: {batch_size}')
+        print(f'\n UCI HAR data loader initialized')
+        print(f'   Data directory: {data_dir}')
+        print(f'   Batch size: {batch_size}')
 
     def _ensure_downloaded(self):
         if os.path.isdir(self.dataset_dir):
@@ -44,7 +42,7 @@ class UCIHARDataLoader:
         if not self.download:
             raise FileNotFoundError(f'UCI HAR dataset not found under {self.dataset_dir}')
 
-        print(f'   下载 UCI HAR 数据集: {UCI_HAR_DOWNLOAD_URL}')
+        print(f'   Downloading UCI HAR dataset: {UCI_HAR_DOWNLOAD_URL}')
         urllib.request.urlretrieve(UCI_HAR_DOWNLOAD_URL, self.archive_path)
 
         with zipfile.ZipFile(self.archive_path, 'r') as outer_zip:
@@ -70,9 +68,6 @@ class UCIHARDataLoader:
         return TensorDataset(feature_tensor, label_tensor)
 
     def load_data(self) -> Dict[str, DataLoader]:
-        print(f"\n{'=' * 60}")
-        print('加载 UCI HAR 数据集')
-        print(f"{'=' * 60}")
 
         start_time = time.time()
         self._ensure_downloaded()
@@ -80,11 +75,11 @@ class UCIHARDataLoader:
         self.test_dataset = self._load_split('test')
         elapsed = time.time() - start_time
 
-        print(f'✅ 数据集加载完成! 时间: {elapsed:.2f}s')
-        print(f'   训练集: {len(self.train_dataset)} 条记录')
-        print(f'   测试集: {len(self.test_dataset)} 条记录')
-        print(f'   特征维度: 561')
-        print(f'   类别数: 6')
+        print(f'   Dataset loading completed! Time: {elapsed:.2f}s')
+        print(f'   Training set: {len(self.train_dataset)} records')
+        print(f'   Test set: {len(self.test_dataset)} records')
+        print(f'   Feature dimension: 561')
+        print(f'   Number of classes: 6')
 
         return self.get_dataloaders()
 

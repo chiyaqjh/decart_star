@@ -1,17 +1,4 @@
 # decart/schemes/ai_models.py
-"""
-AI Models for Homomorphic Encryption
-实现论文 Algorithm 1-4:
-- Algorithm 1: 决策树加密
-- Algorithm 2: 神经网络加密
-- Algorithm 3: 加密决策树查询
-- Algorithm 4: 加密神经网络查询
-
-支持:
-- 决策树 (Decision Tree)
-- 前馈神经网络 (Feed-Forward Neural Network)
-- 同态友好的激活函数近似
-"""
 
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional, Union
@@ -20,25 +7,14 @@ import math
 
 
 class ActivationFunctions:
-    """
-    同态友好的激活函数近似
-    论文要求: 使用低次多项式近似激活函数
-    """
     
     @staticmethod
     def relu_square(x: float) -> float:
-        """
-        ReLU的平方近似: f(x) = x^2 (当x>0时接近，但会放大)
-        适用于CKKS的同态计算
-        """
         return x * x if x > 0 else 0.0
     
     @staticmethod
     def relu_poly3(x: float) -> float:
-        """
-        3次多项式近似ReLU: f(x) = 0.125x^2 + 0.5x + 0.25 (在[-2,2]区间)
-        论文常用近似
-        """
+
         if x < -2:
             return 0.0
         elif x > 2:
@@ -48,33 +24,26 @@ class ActivationFunctions:
     
     @staticmethod
     def sigmoid_poly3(x: float) -> float:
-        """
-        3次多项式近似Sigmoid: f(x) = 0.5 + 0.197x - 0.004x^3
-        在[-5,5]区间有效
-        """
         return 0.5 + 0.197 * x - 0.004 * x * x * x
     
     @staticmethod
     def tanh_poly3(x: float) -> float:
-        """
-        3次多项式近似Tanh: f(x) = x - x^3/3
-        在[-1,1]区间有效
-        """
+
         return x - (x * x * x) / 3.0
 
     @staticmethod
     def square(x: float) -> float:
-        """平方激活: f(x) = x^2"""
+        """Square activation: f(x) = x^2"""
         return x * x
 
     @staticmethod
     def linear(x: float) -> float:
-        """线性激活: f(x) = x"""
+        """Linear activation: f(x) = x"""
         return x
     
     @staticmethod
     def get_he_friendly(name: str, x: float) -> float:
-        """获取同态友好的激活函数值"""
+        """Get the value of a HE-friendly activation function."""
         if name == "linear":
             return ActivationFunctions.linear(x)
         elif name == "square":
@@ -88,24 +57,24 @@ class ActivationFunctions:
         elif name == "tanh_poly3":
             return ActivationFunctions.tanh_poly3(x)
         else:
-            raise ValueError(f"未知激活函数: {name}")
+            raise ValueError(f"Unknown activation function: {name}")
 
 
 class DecisionTreeNode:
-    """决策树节点 - 用于Algorithm 1"""
+    """Decision tree node."""
     
     def __init__(self, node_id: int, is_leaf: bool = False):
         self.node_id = node_id
         self.is_leaf = is_leaf
         
-        # 内部节点属性
-        self.feature_idx: Optional[int] = None  # 特征索引 j_u
-        self.threshold: Optional[float] = None  # 阈值 θ_u
-        self.left_child: Optional[int] = None    # 左子节点ID
-        self.right_child: Optional[int] = None   # 右子节点ID
+        # Internal node attributes
+        self.feature_idx: Optional[int] = None  # Feature index j_u
+        self.threshold: Optional[float] = None  # Threshold theta_u
+        self.left_child: Optional[int] = None    # Left child node ID
+        self.right_child: Optional[int] = None   # Right child node ID
         
-        # 叶子节点属性
-        self.value: Optional[float] = None       # 输出值 v_ℓ
+        # Leaf node attributes
+        self.value: Optional[float] = None       # Output value v_l
     
     def __repr__(self) -> str:
         if self.is_leaf:
@@ -116,8 +85,7 @@ class DecisionTreeNode:
 
 class DecisionTreeHE:
     """
-    同态决策树 - 实现Algorithm 1和Algorithm 3
-    对应论文Algorithm 1的加密表示
+    Homomorphic decision tree.
     """
     
     def __init__(self):
@@ -125,67 +93,66 @@ class DecisionTreeHE:
         self.root_id: Optional[int] = None
     
     def add_node(self, node: DecisionTreeNode):
-        """添加节点"""
+        """Add a node."""
         self.nodes[node.node_id] = node
     
     def set_root(self, node_id: int):
-        """设置根节点"""
+        """Set the root node."""
         if node_id in self.nodes:
             self.root_id = node_id
         else:
-            raise ValueError(f"节点 {node_id} 不存在")
+            raise ValueError(f"Node {node_id} does not exist")
     
     @classmethod
     def from_sklearn(cls, tree_model, feature_names: Optional[List[str]] = None):
         """
-        从sklearn决策树导入
-        用于加载训练好的模型
+        Import from an sklearn decision tree for loading a trained model.
         """
         from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
         
         tree = cls()
         
-        # 获取树结构
+        # Get tree structure
         if hasattr(tree_model, 'tree_'):
-            # sklearn的DecisionTree
+            # sklearn DecisionTree
             tree_struct = tree_model.tree_
             n_nodes = tree_struct.node_count
             
-            # 遍历所有节点
+            # Iterate over all nodes
             for node_id in range(n_nodes):
                 node = DecisionTreeNode(node_id)
                 
-                # 判断是否为叶子节点
+                # Determine whether this is a leaf node
                 is_leaf = tree_struct.children_left[node_id] == -1
                 node.is_leaf = is_leaf
                 
                 if is_leaf:
-                    # 叶子节点：存储输出值
+                    # Leaf node: store output value
                     if hasattr(tree_model, 'classes_'):
-                        # 分类树
+                        # Classification tree
                         value = tree_struct.value[node_id][0]
-                        # 取概率最大的类别
+                        # Take the class with maximum probability
                         node.value = float(np.argmax(value))
                     else:
-                        # 回归树
+                        # Regression tree
                         node.value = float(tree_struct.value[node_id][0][0])
                 else:
-                    # 内部节点：存储特征索引和阈值
+                    # Internal node: store feature index and threshold
                     node.feature_idx = int(tree_struct.feature[node_id])
                     node.threshold = float(tree_struct.threshold[node_id])
                     node.left_child = int(tree_struct.children_left[node_id])
                     node.right_child = int(tree_struct.children_right[node_id])
                 
                 tree.add_node(node)
-                if node_id == 0:  # 根节点
+                if node_id == 0:  # Root node
                     tree.root_id = 0
         
         return tree
     
     def get_encryptable_params(self) -> Dict:
         """
-        获取可加密的参数 - Algorithm 1
-        返回: 需要加密的参数字典
+        Get encryptable parameters.
+        Returns: dictionary of parameters that need encryption.
         """
         internal_nodes = []
         leaf_nodes = []
@@ -214,10 +181,10 @@ class DecisionTreeHE:
     
     def evaluate_plain(self, x: np.ndarray) -> float:
         """
-        明文评估决策树 - 用于验证
+        Evaluate decision tree in plaintext.
         """
         if self.root_id is None:
-            raise ValueError("树未初始化")
+            raise ValueError("Tree is not initialized")
         
         node_id = self.root_id
         while not self.nodes[node_id].is_leaf:
@@ -236,7 +203,7 @@ class DecisionTreeHE:
 # decart/schemes/ai_models.py
 
 class NeuralNetworkHE:
-    """同态神经网络 - 支持单层和最小单隐层架构"""
+    """Homomorphic neural network."""
     
     def __init__(self):
         self.layers: List[Dict] = []
@@ -250,13 +217,12 @@ class NeuralNetworkHE:
                         output_dim: int,
                         activation: str = "linear"):
         """
-        添加单层网络 - 默认使用这个
-        参数:
-            input_dim: 输入维度 (MNIST: 784)
-            output_dim: 输出维度 (MNIST: 10)
-            activation: 激活函数
+        Parameters:
+            input_dim: Input dimension (MNIST: 784)
+            output_dim: Output dimension (MNIST: 10)
+            activation: Activation function
         """
-        # 初始化小随机权重
+        # Initialize small random weights
         w = np.random.randn(output_dim, input_dim).astype(np.float32) * 0.001
         b = np.random.randn(output_dim).astype(np.float32) * 0.001
         
@@ -269,14 +235,13 @@ class NeuralNetworkHE:
         self.input_dim = input_dim
         self.output_dim = output_dim
         
-        print(f"   创建单层网络: {input_dim} -> {output_dim}, 激活={activation}")
+        print(f"   Created single-layer network: {input_dim} -> {output_dim}, activation={activation}")
 
     def add_layer(self,
                   input_dim: int,
                   output_dim: int,
                   activation: str = "linear",
                   weight_scale: Optional[float] = None):
-        """添加一层全连接层。"""
         if weight_scale is None:
             weight_scale = min(0.1, 1.0 / np.sqrt(max(1, input_dim)))
 
@@ -294,7 +259,7 @@ class NeuralNetworkHE:
             self.input_dim = input_dim
         self.output_dim = output_dim
 
-        print(f"   创建网络层: {input_dim} -> {output_dim}, 激活={activation}")
+        print(f"   Created network layer: {input_dim} -> {output_dim}, activation={activation}")
 
     def add_shallow_mlp(self,
                         input_dim: int,
@@ -302,7 +267,6 @@ class NeuralNetworkHE:
                         output_dim: int = 10,
                         hidden_activation: str = "square",
                         output_activation: str = "linear"):
-        """创建最小单隐层 MLP: input -> hidden -> output。"""
         self.layers = []
         self.layer_types = []
         self.activations = []
@@ -311,13 +275,12 @@ class NeuralNetworkHE:
         self.add_layer(input_dim, hidden_dim, activation=hidden_activation)
         self.add_layer(hidden_dim, output_dim, activation=output_activation)
         print(
-            f"   创建单隐层网络: {input_dim} -> {hidden_dim} -> {output_dim}, "
-            f"激活=({hidden_activation}, {output_activation})"
+            f"   Created single-hidden-layer network: {input_dim} -> {hidden_dim} -> {output_dim}, "
+            f"activation=({hidden_activation}, {output_activation})"
         )
     
     @classmethod
     def create_mnist_single_layer(cls):
-        """创建MNIST单层网络 (784 -> 10)"""
         nn = cls()
         nn.add_single_layer(784, 10, activation="linear")
         return nn
@@ -329,7 +292,6 @@ class NeuralNetworkHE:
                            output_dim: int = 10,
                            hidden_activation: str = "square",
                            output_activation: str = "linear"):
-        """创建最小单隐层 MLP。"""
         nn = cls()
         nn.add_shallow_mlp(
             input_dim=input_dim,
@@ -341,7 +303,7 @@ class NeuralNetworkHE:
         return nn
     
     def get_encryptable_params(self) -> List[Dict]:
-        """获取可加密的参数"""
+        """Get encryptable parameters."""
         encryptable = []
         for i, layer in enumerate(self.layers):
             encryptable.append({
@@ -356,7 +318,7 @@ class NeuralNetworkHE:
         return encryptable
     
     def evaluate_plain(self, x: np.ndarray) -> np.ndarray:
-        """明文评估 - 用于验证"""
+        """Evaluate in plaintext."""
         if len(self.layers) == 0:
             return x
 
@@ -373,14 +335,14 @@ class NeuralNetworkHE:
 
 class EncryptedModelWrapper:
     """
-    加密模型包装器
-    统一处理两种模型的加密表示
+    Encrypted model wrapper.
+    Unified handling of encrypted representations for two model types.
     """
     
     def __init__(self, model_type: str):
         """
-        参数:
-            model_type: 'decision_tree' 或 'neural_network'
+        Parameters:
+            model_type: 'decision_tree' or 'neural_network'
         """
         self.model_type = model_type
         self.plain_model = None
@@ -389,7 +351,7 @@ class EncryptedModelWrapper:
     
     @classmethod
     def from_decision_tree(cls, tree_model):
-        """从决策树创建"""
+        """Create from a decision tree."""
         wrapper = cls('decision_tree')
         wrapper.plain_model = DecisionTreeHE.from_sklearn(tree_model)
         wrapper.metadata['node_count'] = len(wrapper.plain_model.nodes)
@@ -397,7 +359,7 @@ class EncryptedModelWrapper:
     
     @classmethod
     def from_neural_network(cls, nn_model, input_dim, hidden_dims, output_dim):
-        """从神经网络创建"""
+        """Create from a neural network."""
         wrapper = cls('neural_network')
         wrapper.plain_model = NeuralNetworkHE.from_pytorch_mlp(nn_model, input_dim, hidden_dims, output_dim)
         wrapper.metadata['layer_count'] = len(wrapper.plain_model.layers)
@@ -405,19 +367,15 @@ class EncryptedModelWrapper:
     
     @classmethod
     def load_from_file(cls, filepath: str):
-        """
-        从文件加载训练好的模型
-        支持 .pkl 文件（如 mlp_medium_*.pkl）
-        """
         with open(filepath, 'rb') as f:
             config = pickle.load(f)
         
         model_name = config.get('model_name', '')
         architecture = config.get('architecture', {})
         
-        # 根据模型名称判断类型
+        # Determine type based on model name
         if 'mlp' in model_name:
-            # 创建MLP结构
+            # Create MLP structure
             from experiments.models.mlp import MLP
             model = MLP(
                 input_dim=architecture.get('input_dim', 784),
@@ -425,8 +383,7 @@ class EncryptedModelWrapper:
                 hidden2=architecture.get('hidden2', 64),
                 output_dim=architecture.get('output_dim', 10)
             )
-            # 注意：这里需要加载训练好的权重，但pkl只存了配置
-            # 实际使用时需要加载完整的模型文件
+
             wrapper = cls.from_neural_network(
                 model,
                 architecture.get('input_dim', 784),
@@ -435,18 +392,16 @@ class EncryptedModelWrapper:
             )
         
         elif 'svm' in model_name:
-            # SVM作为特殊的决策树处理
-            # 简化：创建单节点决策树
+
             tree = DecisionTreeHE()
             node = DecisionTreeNode(0, is_leaf=True)
-            node.value = 0.0  # 占位值
+            node.value = 0.0  # Placeholder value
             tree.add_node(node)
             tree.set_root(0)
             wrapper = cls('decision_tree')
             wrapper.plain_model = tree
         
         elif 'cnn' in model_name:
-            # 简化的CNN作为MLP处理
             from experiments.models.cnn import SimpleCNN
             model = SimpleCNN(
                 num_classes=architecture.get('num_classes', 10)
@@ -459,7 +414,7 @@ class EncryptedModelWrapper:
             )
         
         else:
-            raise ValueError(f"未知模型类型: {model_name}")
+            raise ValueError(f"Unknown model type: {model_name}")
         
         wrapper.metadata['test_accuracy'] = config.get('test_accuracy', 0.0)
         wrapper.metadata['history'] = config.get('history_summary', {})
@@ -467,29 +422,25 @@ class EncryptedModelWrapper:
         return wrapper
     
     def get_encryptable_params(self):
-        """获取需要加密的参数"""
+        """Get parameters that need encryption."""
         if self.model_type == 'decision_tree':
             return self.plain_model.get_encryptable_params()
         else:
             return self.plain_model.get_encryptable_params()
     
     def evaluate_plain(self, x: np.ndarray):
-        """明文评估"""
+        """Evaluate in plaintext."""
         return self.plain_model.evaluate_plain(x)
 
 
-# ========== 测试代码 ==========
+# ========== Test Code ==========
 
 def test_decision_tree():
-    """测试决策树功能"""
-    print("\n" + "="*60)
-    print("测试 Decision Tree 功能")
-    print("="*60)
     
-    # 创建一个简单的决策树
+    # Create a simple decision tree
     tree = DecisionTreeHE()
     
-    # 根节点: 内部节点
+    # Root node: internal node
     root = DecisionTreeNode(0)
     root.feature_idx = 0
     root.threshold = 0.5
@@ -497,122 +448,110 @@ def test_decision_tree():
     root.right_child = 2
     tree.add_node(root)
     
-    # 左叶子
+    # Left leaf
     left = DecisionTreeNode(1, is_leaf=True)
     left.value = 0.0
     tree.add_node(left)
     
-    # 右叶子
+    # Right leaf
     right = DecisionTreeNode(2, is_leaf=True)
     right.value = 1.0
     tree.add_node(right)
     
     tree.set_root(0)
     
-    print(f"树结构: {tree}")
+    print(f"Tree structure: {tree}")
     
-    # 测试明文评估
+    # Test plaintext evaluation
     x1 = np.array([0.2, 0.8])
     x2 = np.array([0.7, 0.3])
     
     result1 = tree.evaluate_plain(x1)
     result2 = tree.evaluate_plain(x2)
     
-    print(f"输入 {x1} → 输出 {result1} (应去左子树)")
-    print(f"输入 {x2} → 输出 {result2} (应去右子树)")
+    print(f"Input {x1} -> Output {result1} (should go to left subtree)")
+    print(f"Input {x2} -> Output {result2} (should go to right subtree)")
     
-    # 获取可加密参数
+    # Get encryptable parameters
     params = tree.get_encryptable_params()
-    print(f"\n可加密参数:")
-    print(f"  内部节点数: {len(params['internal_nodes'])}")
-    print(f"  叶子节点数: {len(params['leaf_nodes'])}")
+    print(f"\nEncryptable parameters:")
+    print(f"  Internal node count: {len(params['internal_nodes'])}")
+    print(f"  Leaf node count: {len(params['leaf_nodes'])}")
     
-    print("\n✅ 决策树测试通过")
+    print("\n Decision tree test passed")
 
 
 def test_neural_network():
-    """测试神经网络功能"""
-    print("\n" + "="*60)
-    print("测试 Neural Network 功能")
-    print("="*60)
     
-    # 创建一个简单的神经网络
+    # Create a simple neural network
     nn = NeuralNetworkHE()
     
-    # 第1层: 3->2
+    # Layer 1: 3->2
     w1 = np.array([[0.1, 0.2, 0.3],
                    [0.4, 0.5, 0.6]])
     b1 = np.array([0.1, 0.2])
     nn.add_layer(w1, b1, activation="relu_poly3")
     
-    # 第2层: 2->1
+    # Layer 2: 2->1
     w2 = np.array([[0.7, 0.8]])
     b2 = np.array([0.3])
     nn.add_layer(w2, b2, activation="linear")
     
-    print(f"网络结构: {nn}")
+    print(f"Network structure: {nn}")
     
-    # 测试明文评估
+    # Test plaintext evaluation
     x = np.array([1.0, 2.0, 3.0])
     result = nn.evaluate_plain(x)
     
-    print(f"输入 {x}")
-    print(f"输出 {result}")
+    print(f"Input {x}")
+    print(f"Output {result}")
     
-    # 手动计算验证
-    # 第1层: z1 = W1·x + b1
+    # Manual calculation for verification
+    # Layer 1: z1 = W1·x + b1
     z1_0 = 0.1*1.0 + 0.2*2.0 + 0.3*3.0 + 0.1  # = 1.5
     z1_1 = 0.4*1.0 + 0.5*2.0 + 0.6*3.0 + 0.2  # = 3.5
-    # ReLU^2近似
+    # ReLU^2 approximation
     h1_0 = ActivationFunctions.relu_poly3(z1_0)  # ≈ 0.125*2.25 + 0.5*1.5 + 0.25 = 1.28125
-    h1_1 = ActivationFunctions.relu_poly3(z1_1)  # 对于>2的值，返回x本身 ≈ 3.5
-    # 第2层: z2 = W2·h1 + b2
+    h1_1 = ActivationFunctions.relu_poly3(z1_1)  # For values >2, returns x itself ≈ 3.5
+    # Layer 2: z2 = W2·h1 + b2
     z2 = 0.7*h1_0 + 0.8*h1_1 + 0.3  # ≈ 0.7*1.281 + 0.8*3.5 + 0.3 = 3.9967
     
-    print(f"手动计算: {z2}")
-    print(f"误差: {abs(result[0] - z2)}")
+    print(f"Manual calculation: {z2}")
+    print(f"Error: {abs(result[0] - z2)}")
     
-    # 获取可加密参数
+    # Get encryptable parameters
     params = nn.get_encryptable_params()
-    print(f"\n可加密参数:")
-    print(f"  层数: {len(params)}")
+    print(f"\nEncryptable parameters:")
+    print(f"  Layer count: {len(params)}")
     for i, p in enumerate(params):
-        print(f"    层{i}: weights {p['weights_shape']}, bias {p['bias_shape']}")
+        print(f"    Layer {i}: weights {p['weights_shape']}, bias {p['bias_shape']}")
     
-    print("\n 神经网络测试通过")
+    print("\n Neural network test passed")
 
 
 def test_activation_functions():
-    """测试激活函数"""
+    """Test activation functions."""
     print("\n" + "="*60)
-    print("测试 Activation Functions")
+    print("Testing Activation Functions")
     print("="*60)
     
     test_points = [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
     
-    print("ReLU^2 近似:")
+    print("ReLU^2 approximation:")
     for x in test_points:
         y = ActivationFunctions.relu_poly3(x)
         print(f"  x={x:4.1f} → {y:.4f}")
     
-    print("\nSigmoid 近似:")
+    print("\nSigmoid approximation:")
     for x in test_points:
         y = ActivationFunctions.sigmoid_poly3(x)
         print(f"  x={x:4.1f} → {y:.4f}")
     
-    print("\n 激活函数测试通过")
+    print("\n Activation function tests passed")
 
 
 if __name__ == "__main__":
-    print("="*60)
-    print(" AI Models 模块测试")
-    print("="*60)
     
     test_activation_functions()
     test_decision_tree()
     test_neural_network()
-    
-    print("\n" + "="*60)
-    print(" 所有测试通过")
-    print("   实现 Algorithm 1-4 的基础支持")
-    print("="*60)
